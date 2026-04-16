@@ -5,6 +5,17 @@ export const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
 export const SLOTS = ['8:00–9:00 AM','9:00–10:00 AM','10:00–11:00 AM','11:00–12:00 PM','12:00–1:00 PM','1:00–2:00 PM','2:00–3:00 PM','3:00–4:00 PM'];
 export const SLOT_HOURS = [8,9,10,11,12,13,14,15];
 
+export const PRACTICE_PLATFORMS = [
+  'LeetCode','HackerRank','GeeksforGeeks','Codeforces','CodeChef',
+  'AtCoder','HackerEarth','InterviewBit','Exercism','Codewars','TopCoder'
+];
+
+export const TARGET_ROLES = [
+  'Frontend Developer','Backend Developer','Full Stack Developer','Software Engineer',
+  'SDE Intern','Data Analyst','Data Scientist','ML Engineer','DevOps Engineer',
+  'Cloud Engineer','QA Engineer','Cybersecurity Analyst','Product Manager','UI/UX Designer'
+];
+
 export const LEETCODE = {
   'Data structures':[{n:'Two Sum',u:'https://leetcode.com/problems/two-sum/'},{n:'Reverse Linked List',u:'https://leetcode.com/problems/reverse-linked-list/'},{n:'Valid Parentheses',u:'https://leetcode.com/problems/valid-parentheses/'},{n:'Maximum Depth of Binary Tree',u:'https://leetcode.com/problems/maximum-depth-of-binary-tree/'},{n:'Top K Frequent Elements',u:'https://leetcode.com/problems/top-k-frequent-elements/'},{n:'Number of Islands',u:'https://leetcode.com/problems/number-of-islands/'},{n:'LRU Cache',u:'https://leetcode.com/problems/lru-cache/'}],
   'Algorithms':[{n:'Binary Search',u:'https://leetcode.com/problems/binary-search/'},{n:'Merge Sorted Array',u:'https://leetcode.com/problems/merge-sorted-array/'},{n:'Climbing Stairs',u:'https://leetcode.com/problems/climbing-stairs/'},{n:'Coin Change',u:'https://leetcode.com/problems/coin-change/'},{n:'Jump Game',u:'https://leetcode.com/problems/jump-game/'},{n:'Word Break',u:'https://leetcode.com/problems/word-break/'},{n:'Longest Increasing Subsequence',u:'https://leetcode.com/problems/longest-increasing-subsequence/'}],

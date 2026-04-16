@@ -1,24 +1,57 @@
 // Chip helper components
+import { PRACTICE_PLATFORMS, TARGET_ROLES } from '../../data/constants';
+
 function ChipGroup({ id, chips, value, onChange, colorClass = 'on', multi = false }) {
   const toggle = (chip) => {
-    if (multi) onChange(prev => prev.includes(chip) ? prev.filter(c => c !== chip) : [...prev, chip]);
-    else onChange(chip === value ? '' : chip);
+    if (multi) {
+      const current = Array.isArray(value) ? value : [];
+      const next = current.includes(chip)
+        ? current.filter(c => c !== chip)
+        : [...current, chip];
+      onChange(next);
+    } else {
+      onChange(chip === value ? '' : chip);
+    }
   };
-  const isOn = (chip) => multi ? (Array.isArray(value) && value.includes(chip)) : value === chip;
+
+  const isOn = (chip) =>
+    multi ? (Array.isArray(value) && value.includes(chip)) : value === chip;
+
   return (
     <div className="chip-row" id={id}>
       {chips.map(chip => (
-        <div key={chip} className={`chip${isOn(chip) ? ' ' + colorClass : ''}`} onClick={() => toggle(chip)}>{chip}</div>
+        <button
+          key={chip}
+          type="button"
+          className={`chip${isOn(chip) ? ' ' + colorClass : ''}`}
+          onClick={() => toggle(chip)}
+        >
+          {chip}
+        </button>
       ))}
     </div>
   );
 }
+// ...existing code...
 
-export default function Step1_Details({ domains, coding, setCoding, workout, setWorkout, interview, setInterview, music, setMusic, language, setLanguage, creative, setCreative, study, setStudy, onBack, onNext }) {
+export default function Step1_Details({
+  domains = [],
+  coding = {}, setCoding = () => {},
+  workout = {}, setWorkout = () => {},
+  interview = {}, setInterview = () => {},
+  music = {}, setMusic = () => {},
+  language = {}, setLanguage = () => {},
+  creative = {}, setCreative = () => {},
+  study = {}, setStudy = () => {},
+  onBack = () => {},
+  onNext = () => {}
+}) {
+  const hasDomain = (name) => Array.isArray(domains) && domains.includes(name);
+
   return (
     <div>
       {/* CODING */}
-      {domains.includes('coding') && (
+      {hasDomain('coding') && (
         <div className="q-card">
           <div className="q-title">💻 Coding</div>
           <div className="qg">
@@ -28,7 +61,13 @@ export default function Step1_Details({ domains, coding, setCoding, workout, set
           <div className="two-col">
             <div className="qg">
               <span className="qlabel">Practice platform</span>
-              <ChipGroup chips={['LeetCode','HackerRank','GeeksforGeeks','Codeforces']} value={coding.platform || ''} onChange={v => setCoding(p => ({ ...p, platform: v }))} colorClass="on" />
+              <ChipGroup
+                chips={PRACTICE_PLATFORMS}
+                value={coding.practicePlatforms || (coding.platform ? [coding.platform] : [])}
+                multi
+                onChange={v => setCoding(p => ({ ...p, practicePlatforms: v, platform: v[0] || '' }))}
+                colorClass="on"
+              />
             </div>
             <div className="qg">
               <span className="qlabel">Skill level</span>
@@ -46,7 +85,7 @@ export default function Step1_Details({ domains, coding, setCoding, workout, set
       )}
 
       {/* WORKOUT */}
-      {domains.includes('workout') && (
+      {hasDomain('workout') && (
         <div className="q-card">
           <div className="q-title">🏋️ Workout</div>
           <div className="qg">
@@ -79,13 +118,19 @@ export default function Step1_Details({ domains, coding, setCoding, workout, set
       )}
 
       {/* INTERVIEW */}
-      {domains.includes('interview') && (
+      {hasDomain('interview') && (
         <div className="q-card">
           <div className="q-title">📋 Interview Prep</div>
           <div className="two-col">
             <div className="qg">
               <span className="qlabel">Target role</span>
-              <ChipGroup chips={['Frontend','Backend','Full stack','Data analyst','PM']} value={interview.role || ''} onChange={v => setInterview(p => ({ ...p, role: v }))} colorClass="on-a" />
+              <ChipGroup
+                chips={TARGET_ROLES}
+                value={interview.targetRoles || (interview.role ? [interview.role] : [])}
+                multi
+                onChange={v => setInterview(p => ({ ...p, targetRoles: v, role: v[0] || '' }))}
+                colorClass="on-a"
+              />
             </div>
             <div className="qg">
               <span className="qlabel">Experience</span>
@@ -107,7 +152,7 @@ export default function Step1_Details({ domains, coding, setCoding, workout, set
       )}
 
       {/* MUSIC */}
-      {domains.includes('music') && (
+      {hasDomain('music') && (
         <div className="q-card">
           <div className="q-title">🎵 Music</div>
           <div className="two-col">
@@ -124,7 +169,7 @@ export default function Step1_Details({ domains, coding, setCoding, workout, set
       )}
 
       {/* LANGUAGE */}
-      {domains.includes('language') && (
+      {hasDomain('language') && (
         <div className="q-card">
           <div className="q-title">🗣️ Language Learning</div>
           <div className="two-col">
@@ -146,7 +191,7 @@ export default function Step1_Details({ domains, coding, setCoding, workout, set
       )}
 
       {/* CREATIVE */}
-      {domains.includes('creative') && (
+      {hasDomain('creative') && (
         <div className="q-card">
           <div className="q-title">🎨 Creative Arts</div>
           <div className="two-col">
@@ -167,7 +212,7 @@ export default function Step1_Details({ domains, coding, setCoding, workout, set
       )}
 
       {/* STUDY */}
-      {domains.includes('study') && (
+      {hasDomain('study') && (
         <div className="q-card">
           <div className="q-title">📝 General Study</div>
           <div className="two-col">
