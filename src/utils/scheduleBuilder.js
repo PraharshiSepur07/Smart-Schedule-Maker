@@ -15,6 +15,56 @@ function mapGoal(s) {
 }
 function priN(p) { return p === 'High' ? 3 : p === 'Medium' ? 2 : 1; }
 
+function parseTimeLabelToHour(label) {
+  if (!label || typeof label !== 'string') return null;
+  const m = label.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)/i);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const mins = parseInt(m[2] || '0', 10);
+  const ap = m[3].toUpperCase();
+  if (ap === 'PM' && h !== 12) h += 12;
+  if (ap === 'AM' && h === 12) h = 0;
+  return h + mins / 60;
+}
+
+function toStartSlotIndex(label) {
+  const hour = parseTimeLabelToHour(label);
+  if (hour === null) return 0;
+  for (let i = 0; i < SLOT_HOURS.length; i++) {
+    if (SLOT_HOURS[i] >= hour) return i;
+  }
+  return SLOT_HOURS.length;
+}
+
+function toEndSlotIndex(label) {
+  const hour = parseTimeLabelToHour(label);
+  if (hour === null) return SLOT_HOURS.length;
+  for (let i = 0; i < SLOT_HOURS.length; i++) {
+    if (SLOT_HOURS[i] >= hour) return i;
+  }
+  return SLOT_HOURS.length;
+}
+
+function parseSlotsPerDay(value, fallback = 1) {
+  const m = String(value || '').match(/(\d+)/);
+  return m ? Math.max(1, parseInt(m[1], 10)) : fallback;
+}
+
+function preferredSlotsFromLabels(labels) {
+  if (!Array.isArray(labels) || !labels.length) return [0, 1, 2, 3, 4, 5, 6, 7];
+  const allSlots = new Set();
+  labels.forEach((label) => {
+    const v = String(label || '').toLowerCase();
+    const m = v.match(/(\d{1,2}):?(\d{2})?/);
+    if (m) {
+      let startH = parseInt(m[1], 10);
+      const slotStart = Math.max(0, Math.min(7, startH - 8));
+      if (slotStart >= 0 && slotStart < 8) allSlots.add(slotStart);
+    }
+  });
+  return allSlots.size ? Array.from(allSlots).sort((a, b) => a - b) : [0, 1, 2, 3, 4, 5, 6, 7];
+}
+
 export function tagCls(type) {
   const m = {
     coding:'c-coding tag-coding', workout:'c-workout tag-workout',
@@ -40,7 +90,18 @@ export function buildSchedule(D) {
 
   const wGoal = mapGoal(D.w.goal);
   const wDaysN = { '3 days': 3, '4 days': 4, '5 days': 5 }[D.w.days] || 3;
-  const wSlotPref = { 'Morning (8–9 AM)': 0, 'Midday (1–2 PM)': 5, 'Evening (3–4 PM)': 7 }[D.p.workoutTime] || 7;
+  const taskPrefs = D.p.taskPrefs || {};
+  const workoutPrefSlots = preferredSlotsFromLabels((taskPrefs.workout && taskPrefs.workout.times) || []);
+  const maxPerDay = {};
+  D.domains.forEach((dom) => {
+    const taskPrefSlots = taskPrefs[dom] && taskPrefs[dom].slotsPerDay;
+    const fallback = dom === 'workout'
+      ? parseSlotsPerDay(D.p.wSlots, 1)
+      : dom === 'study'
+        ? parseSlotsPerDay(D.p.sSlots, 1)
+        : 1;
+    maxPerDay[dom] = parseSlotsPerDay(taskPrefSlots, fallback);
+  });
   const wDays = [];
   for (let i = 0; i < 5 && wDays.length < wDaysN; i++) wDays.push(i);
 
@@ -59,7 +120,18 @@ export function buildSchedule(D) {
 
   if (hC) cTopics.forEach(topic => { const bank = CODING_CONTENT[topic] || []; bank.forEach(([t, d], i) => add('coding', 'Coding — ' + t, d, D.c.priority, D.c.deadline, { topic, bankIdx: i })); });
   if (hI) iTopics.forEach(topic => { const bank = INTERVIEW_CONTENT[topic] || []; bank.forEach(([t, d]) => add('interview', 'Interview — ' + t, d, D.i.priority, D.i.deadline, { topic })); });
-  if (hW) { const plan = WORKOUT_PLANS[wGoal] || WORKOUT_PLANS.maintenance; DAYS.forEach((_, di) => { if (!wDays.includes(di)) return; const [focus, ex] = plan[di] || ['Workout', ['Exercise']]; add('workout', 'Workout — ' + focus, ex.slice(0, 3).join(' · '), D.w.priority, '', { focus, exercises: ex, wGoal, di }); }); }
+  if (hW) {
+    const plan = WORKOUT_PLANS[wGoal] || WORKOUT_PLANS.maintenance;
+    DAYS.forEach((_, di) => {
+      if (!wDays.includes(di)) return;
+      const [focus, ex] = plan[di] || ['Workout', ['Exercise']];
+      const copies = Math.max(1, maxPerDay.workout || 1);
+      for (let cpy = 0; cpy < copies; cpy++) {
+        const suffix = copies > 1 ? ` (session ${cpy + 1})` : '';
+        add('workout', 'Workout — ' + focus + suffix, ex.slice(0, 3).join(' · '), D.w.priority, '', { focus, exercises: ex, wGoal, di });
+      }
+    });
+  }
   if (hM) DAYS.forEach((_, di) => add('music', 'Music — ' + (D.m.instrument || 'Practice'), 'Focused practice: scales, technique, piece', D.m.priority, '', { di }));
   if (hL) DAYS.forEach((_, di) => add('language', 'Language — ' + (D.l.lang || 'Practice'), 'Vocab: 20 words · Speaking: 15 min practice · Duolingo streak', D.l.priority, '', { di }));
   if (hCr) DAYS.forEach((_, di) => add('creative', 'Creative — ' + (D.cr.medium || 'Art'), 'Focused session: warmup sketches → technique → project', D.cr.priority, '', { di }));
@@ -71,12 +143,51 @@ export function buildSchedule(D) {
   D.domains.forEach(d => { guaranteed[d] = false; });
 
   const grid = Array.from({ length: 5 }, () => new Array(8).fill(null));
+  const blocked = Array.from({ length: 5 }, () => new Array(8).fill(false));
+  const placedCount = Array.from({ length: 5 }, () => ({}));
+
+  (D.p.unavailableRanges || []).forEach((r) => {
+    if (!r || !r.from || !r.to) return;
+    const fs = toStartSlotIndex(r.from);
+    const ts = toEndSlotIndex(r.to);
+    if (fs >= ts) return;
+    for (let d = 0; d < 5; d++) {
+      for (let s = fs; s < ts && s < 8; s++) {
+        if (s >= 0) blocked[d][s] = true;
+      }
+    }
+  });
+
+  for (let d = 0; d < 5; d++) {
+    for (let s = 0; s < 8; s++) {
+      if (blocked[d][s]) {
+        grid[d][s] = {
+          type: 'break',
+          title: '⛔ Unavailable',
+          detail: 'Blocked as per your availability settings',
+          tag: 'break'
+        };
+      }
+    }
+  }
+
+  function canPlace(domain, dayIdx, slotIdx) {
+    if (blocked[dayIdx][slotIdx]) return false;
+    const limit = maxPerDay[domain] || 1;
+    return (placedCount[dayIdx][domain] || 0) < limit;
+  }
+
+  function markPlaced(domain, dayIdx) {
+    placedCount[dayIdx][domain] = (placedCount[dayIdx][domain] || 0) + 1;
+  }
 
   // Lock lunch slot
   const lData = LUNCH[wGoal] || LUNCH.maintenance;
   for (let d2 = 0; d2 < 5; d2++) {
     const meal = lData.meals[d2 % lData.meals.length];
-    grid[d2][4] = { type: 'break', title: '🍱 Lunch break', detail: meal, tag: 'break', isLunch: true, lunchNote: lData.note };
+    if (!blocked[d2][4]) {
+      grid[d2][4] = { type: 'break', title: '🍱 Lunch break', detail: meal, tag: 'break', isLunch: true, lunchNote: lData.note };
+    }
   }
 
   // Place wellness
@@ -84,7 +195,7 @@ export function buildSchedule(D) {
     let wDayCount = 0;
     for (let d3 = 0; d3 < 5 && wDayCount < wellnessFreq; d3++) {
       const ws = WELLNESS_SLOTS[d3 % WELLNESS_SLOTS.length];
-      if (grid[d3][0] === null) { grid[d3][0] = { type: 'well', title: ws.title, detail: ws.detail, tag: 'well', link: ws.link }; wDayCount++; }
+      if (grid[d3][0] === null && !blocked[d3][0]) { grid[d3][0] = { type: 'well', title: ws.title, detail: ws.detail, tag: 'well', link: ws.link }; wDayCount++; }
     }
   }
 
@@ -93,10 +204,27 @@ export function buildSchedule(D) {
     const plan2 = WORKOUT_PLANS[wGoal] || WORKOUT_PLANS.maintenance;
     wDays.forEach(di2 => {
       const [focus2, ex2] = plan2[di2] || ['Workout', ['Exercise']];
-      let sl = wSlotPref; if (sl === 4) sl = 5;
-      if (grid[di2][sl] === null) {
-        grid[di2][sl] = { type: 'workout', title: 'Workout — ' + focus2, detail: ex2.slice(0, 3).join(' · '), tag: 'workout', focus: focus2, exercises: ex2, ytLink: WORKOUT_VID[focus2] || 'https://youtube.com/results?search_query=workout+tutorial' };
-        guaranteed['workout'] = true;
+    const prefSlots = workoutPrefSlots.length ? workoutPrefSlots : [7];
+      let placed = false;
+      for (let i = 0; i < prefSlots.length; i++) {
+        const sl = prefSlots[i];
+        if (sl >= 0 && sl < 8 && grid[di2][sl] === null && canPlace('workout', di2, sl)) {
+          grid[di2][sl] = { type: 'workout', title: 'Workout — ' + focus2, detail: ex2.slice(0, 3).join(' · '), tag: 'workout', focus: focus2, exercises: ex2, ytLink: WORKOUT_VID[focus2] || 'https://youtube.com/results?search_query=workout+tutorial' };
+          markPlaced('workout', di2);
+          guaranteed['workout'] = true;
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        for (let sl = 0; sl < 8; sl++) {
+          if (grid[di2][sl] === null && canPlace('workout', di2, sl)) {
+            grid[di2][sl] = { type: 'workout', title: 'Workout — ' + focus2, detail: ex2.slice(0, 3).join(' · '), tag: 'workout', focus: focus2, exercises: ex2, ytLink: WORKOUT_VID[focus2] || 'https://youtube.com/results?search_query=workout+tutorial' };
+            markPlaced('workout', di2);
+            guaranteed['workout'] = true;
+            break;
+          }
+        }
       }
     });
   }
@@ -108,9 +236,13 @@ export function buildSchedule(D) {
     if (seen.has(key)) return;
     seen.add(key);
     let placed = false;
-    for (let dd = 0; dd < 5 && !placed; dd++) {
-      for (let ss = 0; ss < 8 && !placed; ss++) {
-        if (grid[dd][ss] === null) {
+    const prefSlots = preferredSlotsFromLabels((taskPrefs[item.domain] && taskPrefs[item.domain].times) || []);
+    const passes = [prefSlots, [0, 1, 2, 3, 4, 5, 6, 7]];
+    for (let pass = 0; pass < passes.length && !placed; pass++) {
+      for (let dd = 0; dd < 5 && !placed; dd++) {
+        for (let pi = 0; pi < passes[pass].length && !placed; pi++) {
+          const ss = passes[pass][pi];
+          if (grid[dd][ss] === null && canPlace(item.domain, dd, ss)) {
           const cell = { type: item.domain, title: item.title, detail: item.detail, tag: item.domain };
           if (item.domain === 'coding' && item.meta.topic) {
             const lcs = LEETCODE[item.meta.topic] || [];
@@ -124,10 +256,12 @@ export function buildSchedule(D) {
           if (item.domain === 'creative') { const med = D.cr.medium || 'Drawing / Sketching'; cell.ytLink = CREATIVE_VID[med] || ''; cell.gfgLink = CREATIVE_GFG[med] || ''; }
           if (item.domain === 'well') cell.link = item.meta.link;
           grid[dd][ss] = cell;
+          markPlaced(item.domain, dd);
           if (!guaranteed[item.domain]) guaranteed[item.domain] = true;
           placed = true;
         }
       }
+    }
     }
   });
 
@@ -136,8 +270,9 @@ export function buildSchedule(D) {
     if (guaranteed[dom]) return;
     for (let dd2 = 0; dd2 < 5; dd2++) {
       for (let ss2 = 0; ss2 < 8; ss2++) {
-        if (grid[dd2][ss2] === null || (grid[dd2][ss2].type === 'break' && ss2 !== 4)) {
+        if ((grid[dd2][ss2] === null || (grid[dd2][ss2].type === 'break' && ss2 !== 4)) && canPlace(dom, dd2, ss2)) {
           grid[dd2][ss2] = { type: dom, title: dom.charAt(0).toUpperCase() + dom.slice(1) + ' session', detail: 'Catch-up session — review notes & practice', tag: dom };
+          markPlaced(dom, dd2);
           guaranteed[dom] = true; return;
         }
       }

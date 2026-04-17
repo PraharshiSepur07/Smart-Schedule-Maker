@@ -31,7 +31,18 @@ export default function PlanPage() {
   const [language, setLanguage] = useState({ priority: 'Medium' });
   const [creative, setCreative] = useState({ priority: 'Medium' });
   const [study, setStudy] = useState({ priority: 'Medium' });
-  const [prefs, setPrefs] = useState({ avFrom: '8:30 AM', avTo: '4:00 PM', wHrs: '1 hour', wSlots: '1 slot/day', sHrs: '1 hour', sSlots: '1 slot/day', workoutTime: 'Evening (3–4 PM)', wellness: 'Yes, daily' });
+  const [prefs, setPrefs] = useState({
+    avFrom: '8:30 AM',
+    avTo: '4:00 PM',
+    wHrs: '1 hour',
+    wSlots: '1 slot/day',
+    sHrs: '1 hour',
+    sSlots: '1 slot/day',
+    workoutTime: 'Evening (3–4 PM)',
+    wellness: 'Yes, daily',
+    unavailableRanges: [{ from: '', to: '' }],
+    taskPrefs: {}
+  });
   const [userName, setUserName] = useState(currentUser ? currentUser.name : '');
 
   // Timetable
@@ -110,6 +121,7 @@ export default function PlanPage() {
       )}
       {step === 2 && (
         <Step2_Preferences
+          domains={domains}
           prefs={prefs} setPrefs={setPrefs}
           userName={userName} setUserName={setUserName}
           onBack={() => goTo(1)} onNext={handleNext2}

@@ -2,7 +2,7 @@
 // DATA TABLES — all constants from the original HTML
 // ══════════════════════════════════════════════════
 export const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
-export const SLOTS = ['8:00–9:00 AM','9:00–10:00 AM','10:00–11:00 AM','11:00–12:00 PM','12:00–1:00 PM','1:00–2:00 PM','2:00–3:00 PM','3:00–4:00 PM'];
+export const SLOTS = ['08:00-09:00','09:00-10:00','10:00-11:00','11:00-12:00','12:00-13:00','13:00-14:00','14:00-15:00','15:00-16:00'];
 export const SLOT_HOURS = [8,9,10,11,12,13,14,15];
 
 export const PRACTICE_PLATFORMS = [
