@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DAYS, SLOTS } from '../../data/constants';
 import { tagCls, tagLabel, exportGCal } from '../../utils/scheduleBuilder';
@@ -6,6 +7,54 @@ import { getStreak, saveSchedule } from '../../utils/storage';
 export default function Step3_Timetable({ timetable, tickState, setTickState, userName, onBack, onNext }) {
   const { globalSchedule, setGlobalSchedule, showToast, openGameModal, currentUser } = useApp();
   const streak = getStreak();
+  const slotCount = SLOTS.length;
+
+  const isUnavailableCell = (cell) => {
+    if (!cell) return true;
+    return cell.type === 'break' && String(cell.title || '').toLowerCase().includes('unavailable');
+  };
+
+  const getWeekMarker = () => {
+    const now = new Date();
+    const day = now.getDay();
+    const deltaToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + deltaToMonday);
+    return monday.toISOString().slice(0, 10);
+  };
+
+  const visibleSlotIndexes = SLOTS
+    .map((_, si) => si)
+    .filter((si) => {
+      return DAYS.some((day) => {
+        const c = timetable?.[day]?.[si];
+        return !isUnavailableCell(c);
+      });
+    });
+
+  useEffect(() => {
+    const weekMarker = getWeekMarker();
+    const lastResetWeek = localStorage.getItem('ssp_tick_reset_week');
+    if (lastResetWeek === weekMarker) return;
+
+    const reset = {};
+    DAYS.forEach((day) => {
+      reset[day] = new Array(slotCount).fill(false);
+    });
+    setTickState(reset);
+
+    if (globalSchedule && globalSchedule.id) {
+      const saved = JSON.parse(localStorage.getItem('ssp_schedules') || '[]');
+      const idx = saved.findIndex((s) => s.id === globalSchedule.id);
+      if (idx >= 0) {
+        saved[idx].tickState = reset;
+        localStorage.setItem('ssp_schedules', JSON.stringify(saved));
+        setGlobalSchedule({ ...saved[idx] });
+      }
+    }
+
+    localStorage.setItem('ssp_tick_reset_week', weekMarker);
+  }, [globalSchedule, setGlobalSchedule, setTickState, slotCount]);
 
   const today = (() => {
     const day = new Date().getDay();
@@ -13,12 +62,13 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
     return DAYS[Math.min(day - 1, 4)];
   })();
 
-  const todayTicks = (tickState[today] || []).filter(Boolean).length;
-  const pct = Math.round(todayTicks / 8 * 100);
+  const progressIndexes = visibleSlotIndexes.filter((si) => !isUnavailableCell(timetable?.[today]?.[si]));
+  const todayTicks = progressIndexes.filter((si) => Boolean((tickState[today] || [])[si])).length;
+  const pct = Math.round(todayTicks / Math.max(1, progressIndexes.length) * 100);
 
   const doTick = (day, si) => {
     setTickState(prev => {
-      const updated = { ...prev, [day]: [...(prev[day] || new Array(8).fill(false))] };
+      const updated = { ...prev, [day]: [...(prev[day] || new Array(slotCount).fill(false))] };
       updated[day][si] = !updated[day][si];
       // Update saved if exists
       if (globalSchedule && globalSchedule.id) {
@@ -94,7 +144,9 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
         <table className="tt">
           <thead><tr><th>Time</th>{DAYS.map(d => <th key={d}>{d}</th>)}</tr></thead>
           <tbody>
-            {SLOTS.map((sl, si) => (
+            {visibleSlotIndexes.map((si) => {
+              const sl = SLOTS[si];
+              return (
               <tr key={sl}>
                 <td>{sl}</td>
                 {DAYS.map(day => {
@@ -103,7 +155,7 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
                   const ticked = (tickState[day] || [])[si];
                   return (
                     <td key={day} className={bgCls}>
-                      <span className={`ctag ${tgCls}`}>{tagLabel(c.type)}</span>
+                      {c.type !== 'break' && <span className={`ctag ${tgCls}`}>{tagLabel(c.type)}</span>}
                       <div className="ctitle">{c.title}</div>
                       <div className="cdet">{c.detail}</div>
                       <div className="res-links">
@@ -122,7 +174,8 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
                   );
                 })}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

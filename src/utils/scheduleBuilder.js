@@ -17,13 +17,15 @@ function priN(p) { return p === 'High' ? 3 : p === 'Medium' ? 2 : 1; }
 
 function parseTimeLabelToHour(label) {
   if (!label || typeof label !== 'string') return null;
-  const m = label.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)/i);
+  const m = label.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/i);
   if (!m) return null;
   let h = parseInt(m[1], 10);
   const mins = parseInt(m[2] || '0', 10);
-  const ap = m[3].toUpperCase();
-  if (ap === 'PM' && h !== 12) h += 12;
-  if (ap === 'AM' && h === 12) h = 0;
+  const ap = m[3] ? m[3].toUpperCase() : null;
+  if (ap) {
+    if (ap === 'PM' && h !== 12) h += 12;
+    if (ap === 'AM' && h === 12) h = 0;
+  }
   return h + mins / 60;
 }
 
@@ -50,19 +52,26 @@ function parseSlotsPerDay(value, fallback = 1) {
   return m ? Math.max(1, parseInt(m[1], 10)) : fallback;
 }
 
+function parseMinutesPerDay(value, fallback = 60) {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  const m = String(value || '').match(/(\d+)/);
+  return m ? Math.max(1, parseInt(m[1], 10)) : fallback;
+}
+
 function preferredSlotsFromLabels(labels) {
-  if (!Array.isArray(labels) || !labels.length) return [0, 1, 2, 3, 4, 5, 6, 7];
+  if (!Array.isArray(labels) || !labels.length) return Array.from({ length: SLOT_HOURS.length }, (_, i) => i);
   const allSlots = new Set();
   labels.forEach((label) => {
     const v = String(label || '').toLowerCase();
     const m = v.match(/(\d{1,2}):?(\d{2})?/);
     if (m) {
       let startH = parseInt(m[1], 10);
-      const slotStart = Math.max(0, Math.min(7, startH - 8));
-      if (slotStart >= 0 && slotStart < 8) allSlots.add(slotStart);
+      const slotStart = Math.max(0, Math.min(SLOT_HOURS.length - 1, startH - SLOT_HOURS[0]));
+      if (slotStart >= 0 && slotStart < SLOT_HOURS.length) allSlots.add(slotStart);
     }
   });
-  return allSlots.size ? Array.from(allSlots).sort((a, b) => a - b) : [0, 1, 2, 3, 4, 5, 6, 7];
+  return allSlots.size ? Array.from(allSlots).sort((a, b) => a - b) : Array.from({ length: SLOT_HOURS.length }, (_, i) => i);
 }
 
 export function tagCls(type) {
@@ -94,13 +103,24 @@ export function buildSchedule(D) {
   const workoutPrefSlots = preferredSlotsFromLabels((taskPrefs.workout && taskPrefs.workout.times) || []);
   const maxPerDay = {};
   D.domains.forEach((dom) => {
-    const taskPrefSlots = taskPrefs[dom] && taskPrefs[dom].slotsPerDay;
-    const fallback = dom === 'workout'
-      ? parseSlotsPerDay(D.p.wSlots, 1)
+    const taskPref = taskPrefs[dom] || {};
+    const explicitSlots = taskPref.slotsPerDay;
+    const taskPrefMinutes = taskPref.minutesPerDay;
+    const fallbackMinutes = dom === 'workout'
+      ? parseSlotsPerDay(D.p.wSlots, 1) * 60
       : dom === 'study'
-        ? parseSlotsPerDay(D.p.sSlots, 1)
-        : 1;
-    maxPerDay[dom] = parseSlotsPerDay(taskPrefSlots, fallback);
+        ? parseSlotsPerDay(D.p.sSlots, 1) * 60
+        : 60;
+    
+    let slotsPerDay = 1;
+    if (explicitSlots !== undefined && explicitSlots !== null && Number.isFinite(Number(explicitSlots))) {
+      slotsPerDay = Math.max(1, Math.min(SLOT_HOURS.length, Number(explicitSlots)));
+    } else if (taskPrefMinutes !== undefined && taskPrefMinutes !== null) {
+      const minutesPerDay = parseMinutesPerDay(taskPrefMinutes, fallbackMinutes);
+      slotsPerDay = Math.max(1, Math.ceil(minutesPerDay / 60));
+    }
+    
+    maxPerDay[dom] = slotsPerDay;
   });
   const wDays = [];
   for (let i = 0; i < 5 && wDays.length < wDaysN; i++) wDays.push(i);
@@ -142,24 +162,32 @@ export function buildSchedule(D) {
   const guaranteed = {};
   D.domains.forEach(d => { guaranteed[d] = false; });
 
-  const grid = Array.from({ length: 5 }, () => new Array(8).fill(null));
-  const blocked = Array.from({ length: 5 }, () => new Array(8).fill(false));
+  const slotCount = SLOT_HOURS.length;
+  const allSlotIndexes = Array.from({ length: slotCount }, (_, i) => i);
+  const grid = Array.from({ length: 5 }, () => new Array(slotCount).fill(null));
+  const blocked = Array.from({ length: 5 }, () => new Array(slotCount).fill(false));
   const placedCount = Array.from({ length: 5 }, () => ({}));
 
   (D.p.unavailableRanges || []).forEach((r) => {
     if (!r || !r.from || !r.to) return;
     const fs = toStartSlotIndex(r.from);
     const ts = toEndSlotIndex(r.to);
-    if (fs >= ts) return;
+    if (fs === ts) return;
     for (let d = 0; d < 5; d++) {
-      for (let s = fs; s < ts && s < 8; s++) {
-        if (s >= 0) blocked[d][s] = true;
+      if (fs < ts) {
+        for (let s = fs; s < ts && s < slotCount; s++) {
+          if (s >= 0) blocked[d][s] = true;
+        }
+      } else {
+        // Overnight block (e.g. 23:00 -> 06:00)
+        for (let s = fs; s < slotCount; s++) blocked[d][s] = true;
+        for (let s = 0; s < ts; s++) blocked[d][s] = true;
       }
     }
   });
 
   for (let d = 0; d < 5; d++) {
-    for (let s = 0; s < 8; s++) {
+    for (let s = 0; s < slotCount; s++) {
       if (blocked[d][s]) {
         grid[d][s] = {
           type: 'break',
@@ -183,10 +211,11 @@ export function buildSchedule(D) {
 
   // Lock lunch slot
   const lData = LUNCH[wGoal] || LUNCH.maintenance;
+  const lunchSlot = Math.max(0, SLOT_HOURS.indexOf(12));
   for (let d2 = 0; d2 < 5; d2++) {
     const meal = lData.meals[d2 % lData.meals.length];
-    if (!blocked[d2][4]) {
-      grid[d2][4] = { type: 'break', title: '🍱 Lunch break', detail: meal, tag: 'break', isLunch: true, lunchNote: lData.note };
+    if (!blocked[d2][lunchSlot]) {
+      grid[d2][lunchSlot] = { type: 'break', title: '🍱 Lunch break', detail: meal, tag: 'break', isLunch: true, lunchNote: lData.note };
     }
   }
 
@@ -204,11 +233,12 @@ export function buildSchedule(D) {
     const plan2 = WORKOUT_PLANS[wGoal] || WORKOUT_PLANS.maintenance;
     wDays.forEach(di2 => {
       const [focus2, ex2] = plan2[di2] || ['Workout', ['Exercise']];
-    const prefSlots = workoutPrefSlots.length ? workoutPrefSlots : [7];
+    const defaultWorkoutSlot = Math.max(0, SLOT_HOURS.indexOf(18));
+    const prefSlots = workoutPrefSlots.length ? workoutPrefSlots : [defaultWorkoutSlot];
       let placed = false;
       for (let i = 0; i < prefSlots.length; i++) {
         const sl = prefSlots[i];
-        if (sl >= 0 && sl < 8 && grid[di2][sl] === null && canPlace('workout', di2, sl)) {
+        if (sl >= 0 && sl < slotCount && grid[di2][sl] === null && canPlace('workout', di2, sl)) {
           grid[di2][sl] = { type: 'workout', title: 'Workout — ' + focus2, detail: ex2.slice(0, 3).join(' · '), tag: 'workout', focus: focus2, exercises: ex2, ytLink: WORKOUT_VID[focus2] || 'https://youtube.com/results?search_query=workout+tutorial' };
           markPlaced('workout', di2);
           guaranteed['workout'] = true;
@@ -217,7 +247,7 @@ export function buildSchedule(D) {
         }
       }
       if (!placed) {
-        for (let sl = 0; sl < 8; sl++) {
+        for (let sl = 0; sl < slotCount; sl++) {
           if (grid[di2][sl] === null && canPlace('workout', di2, sl)) {
             grid[di2][sl] = { type: 'workout', title: 'Workout — ' + focus2, detail: ex2.slice(0, 3).join(' · '), tag: 'workout', focus: focus2, exercises: ex2, ytLink: WORKOUT_VID[focus2] || 'https://youtube.com/results?search_query=workout+tutorial' };
             markPlaced('workout', di2);
@@ -237,7 +267,7 @@ export function buildSchedule(D) {
     seen.add(key);
     let placed = false;
     const prefSlots = preferredSlotsFromLabels((taskPrefs[item.domain] && taskPrefs[item.domain].times) || []);
-    const passes = [prefSlots, [0, 1, 2, 3, 4, 5, 6, 7]];
+    const passes = [prefSlots, allSlotIndexes];
     for (let pass = 0; pass < passes.length && !placed; pass++) {
       for (let dd = 0; dd < 5 && !placed; dd++) {
         for (let pi = 0; pi < passes[pass].length && !placed; pi++) {
@@ -269,8 +299,8 @@ export function buildSchedule(D) {
   D.domains.forEach(dom => {
     if (guaranteed[dom]) return;
     for (let dd2 = 0; dd2 < 5; dd2++) {
-      for (let ss2 = 0; ss2 < 8; ss2++) {
-        if ((grid[dd2][ss2] === null || (grid[dd2][ss2].type === 'break' && ss2 !== 4)) && canPlace(dom, dd2, ss2)) {
+      for (let ss2 = 0; ss2 < slotCount; ss2++) {
+        if ((grid[dd2][ss2] === null || (grid[dd2][ss2].type === 'break' && ss2 !== lunchSlot)) && canPlace(dom, dd2, ss2)) {
           grid[dd2][ss2] = { type: dom, title: dom.charAt(0).toUpperCase() + dom.slice(1) + ' session', detail: 'Catch-up session — review notes & practice', tag: dom };
           markPlaced(dom, dd2);
           guaranteed[dom] = true; return;
@@ -287,7 +317,7 @@ export function buildSchedule(D) {
     { type: 'break', title: '📋 Wrap-up & reflect', detail: 'Tick tasks, plan tomorrow, reflect on progress', tag: 'break' }
   ];
   let fi = 0;
-  for (let d4 = 0; d4 < 5; d4++) for (let s4 = 0; s4 < 8; s4++) if (!grid[d4][s4]) grid[d4][s4] = fills[(fi++) % fills.length];
+  for (let d4 = 0; d4 < 5; d4++) for (let s4 = 0; s4 < slotCount; s4++) if (!grid[d4][s4]) grid[d4][s4] = fills[(fi++) % fills.length];
 
   const timetable = {};
   DAYS.forEach((day, di3) => { timetable[day] = grid[di3].map((cell, si) => ({ time: SLOTS[si], ...cell })); });
@@ -328,7 +358,15 @@ export function exportGCal(GS, userName) {
       const start = new Date(d); start.setHours(h, 0, 0);
       const end = new Date(start); end.setHours(h + 1, 0, 0);
       const fmt = dt => dt.toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
-      ics.push('BEGIN:VEVENT', 'DTSTART:' + fmt(start), 'DTEND:' + fmt(end), 'SUMMARY:' + cell.title, 'DESCRIPTION:' + cell.detail + (cell.lc ? '\\nLeetCode: ' + cell.lc.u : '') + (cell.ytLink ? '\\nTutorial: ' + cell.ytLink : '') + (cell.duoLink ? '\\nDuolingo: ' + cell.duoLink : ''), 'END:VEVENT');
+      ics.push(
+        'BEGIN:VEVENT',
+        'DTSTART:' + fmt(start),
+        'DTEND:' + fmt(end),
+        'RRULE:FREQ=WEEKLY;COUNT=52',
+        'SUMMARY:' + cell.title,
+        'DESCRIPTION:' + cell.detail + (cell.lc ? '\\nLeetCode: ' + cell.lc.u : '') + (cell.ytLink ? '\\nTutorial: ' + cell.ytLink : '') + (cell.duoLink ? '\\nDuolingo: ' + cell.duoLink : ''),
+        'END:VEVENT'
+      );
     });
   });
   ics.push('END:VCALENDAR');

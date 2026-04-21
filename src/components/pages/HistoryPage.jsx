@@ -1,6 +1,6 @@
 import { useApp } from '../../context/AppContext';
 import { getSaved, deleteSaved } from '../../utils/storage';
-import { DAYS } from '../../data/constants';
+import { DAYS, SLOTS } from '../../data/constants';
 
 export default function HistoryPage() {
   const { currentUser, showPage, setGlobalSchedule, setTickState, showToast } = useApp();
@@ -17,7 +17,7 @@ export default function HistoryPage() {
 
   const doView = (s) => {
     const ts = s.tickState || {};
-    DAYS.forEach(day => { if (!ts[day]) ts[day] = new Array(8).fill(false); });
+    DAYS.forEach(day => { if (!ts[day]) ts[day] = new Array(SLOTS.length).fill(false); });
     setGlobalSchedule(s);
     setTickState(ts);
     showPage('plan');

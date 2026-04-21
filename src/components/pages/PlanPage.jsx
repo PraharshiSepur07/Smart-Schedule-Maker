@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { DAYS, SLOTS } from '../../data/constants';
 import { buildSchedule, scheduleNotifsSetup } from '../../utils/scheduleBuilder';
 import { updateStreak } from '../../utils/storage';
 import Step0_Domains from '../plan/Step0_Domains';
@@ -76,7 +77,7 @@ export default function PlanPage() {
     setTimeout(() => {
       const result = buildSchedule(D);
       const ts = {};
-      ['Monday','Tuesday','Wednesday','Thursday','Friday'].forEach(day => { ts[day] = new Array(8).fill(false); });
+      DAYS.forEach(day => { ts[day] = new Array(SLOTS.length).fill(false); });
       setTimetable(result.timetable);
       setTickState(ts);
       setGlobalSchedule(result);

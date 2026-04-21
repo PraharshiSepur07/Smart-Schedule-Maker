@@ -2,8 +2,13 @@
 // DATA TABLES — all constants from the original HTML
 // ══════════════════════════════════════════════════
 export const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
-export const SLOTS = ['08:00-09:00','09:00-10:00','10:00-11:00','11:00-12:00','12:00-13:00','13:00-14:00','14:00-15:00','15:00-16:00'];
-export const SLOT_HOURS = [8,9,10,11,12,13,14,15];
+export const SLOT_HOURS = Array.from({ length: 17 }, (_, i) => 6 + i); // 06:00..22:00
+export const SLOTS = SLOT_HOURS.map((h) => {
+  const start = String(h).padStart(2, '0') + ':00';
+  const endHour = (h + 1) % 24;
+  const end = String(endHour).padStart(2, '0') + ':00';
+  return start + '-' + end;
+});
 
 export const PRACTICE_PLATFORMS = [
   'LeetCode','HackerRank','GeeksforGeeks','Codeforces','CodeChef',
