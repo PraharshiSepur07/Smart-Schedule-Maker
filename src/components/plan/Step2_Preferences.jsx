@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import TimePickerModal from '../TimePickerModal';
+
 const TIME_OPTIONS = [
   '8:00 AM',
   '9:00 AM',
@@ -11,12 +14,12 @@ const TIME_OPTIONS = [
   '5:00 PM',
   '6:00 PM',
   '7:00 PM',
-  '8:00 PM',
+  '8:00 PM', 
   '9:00 PM'
 ];
 
 const TASK_TIME_CHIPS = ['Morning (8-11 AM)', 'Midday (11 AM-2 PM)', 'Afternoon (2-4 PM)', 'Any time'];
-const TASK_SLOT_CHIPS = ['1 slot/day', '2 slots/day', '3 slots/day'];
+const TASK_HOUR_CHIPS = ['1 hour/day', '2 hours/day', '3 hours/day'];
 
 const DOMAIN_LABELS = {
   coding: 'Coding',
@@ -127,6 +130,7 @@ function normalizeRanges(ranges) {
 
 export default function Step2_Preferences({ domains, prefs, setPrefs, userName, setUserName, onBack, onNext }) {
   const unavailableRanges = normalizeRanges(prefs.unavailableRanges);
+  const [activeTimePicker, setActiveTimePicker] = useState(null); // { rangeIdx, field: 'from'|'to' }
 
   const updateRange = (idx, key, value) => {
     setPrefs((p) => {
@@ -165,28 +169,39 @@ export default function Step2_Preferences({ domains, prefs, setPrefs, userName, 
 
   return (
     <div>
+      {/* Time Picker Modal */}
+      {activeTimePicker && (
+        <TimePickerModal
+          value={unavailableRanges[activeTimePicker.rangeIdx]?.[activeTimePicker.field] || ''}
+          onChange={(newTime) => {
+            updateRange(activeTimePicker.rangeIdx, activeTimePicker.field, newTime);
+          }}
+          onClose={() => setActiveTimePicker(null)}
+        />
+      )}
+
       <div className="q-card">
         <div className="q-title">Daily availability &amp; preferences</div>
 
         <div className="qg">
           <span className="qlabel">When are you not available?</span>
-          <div className="q-subhint">Example: 09:00 to 13:00 and 18:00 to 21:00. You can type times like 09:15, 23:13, etc.</div>
+          <div className="q-subhint">Example: 09:00 to 13:00 and 18:00 to 21:00. Click to select times.</div>
           {unavailableRanges.map((range, idx) => (
             <div className="range-row" key={`range-${idx}`}>
-              <input
-                type="text"
-                placeholder="From (e.g., 09:00)"
-                value={range.from || ''}
-                onChange={(e) => updateRange(idx, 'from', e.target.value)}
-                className="form-input"
-              />
-              <input
-                type="text"
-                placeholder="To (e.g., 13:00)"
-                value={range.to || ''}
-                onChange={(e) => updateRange(idx, 'to', e.target.value)}
-                className="form-input"
-              />
+              <div
+                className="time-input"
+                onClick={() => setActiveTimePicker({ rangeIdx: idx, field: 'from' })}
+              >
+                <span className="time-input-label">From</span>
+                <span className="time-input-value">{range.from || 'Pick start time'}</span>
+              </div>
+              <div
+                className="time-input"
+                onClick={() => setActiveTimePicker({ rangeIdx: idx, field: 'to' })}
+              >
+                <span className="time-input-label">To</span>
+                <span className="time-input-value">{range.to || 'Pick end time'}</span>
+              </div>
               <button type="button" className="mini-btn danger" onClick={() => removeRange(idx)}>Remove</button>
             </div>
           ))}
@@ -195,11 +210,11 @@ export default function Step2_Preferences({ domains, prefs, setPrefs, userName, 
 
         {!!(domains && domains.length) && (
           <div className="qg">
-            <span className="qlabel">Task timing and slots per day</span>
-            <div className="q-subhint">For each task: pick which times of day AND how many slots/day. Example: Workout in Morning + Evening, 2 slots/day.</div>
+            <span className="qlabel">Task timing and hours per day</span>
+            <div className="q-subhint">For each task: pick which times of day AND how many hours you want to spend on it. Example: Workout in Morning + Evening, 2 hours/day.</div>
             <div className="task-pref-grid">
               {domains.map((domain) => {
-                const pref = (prefs.taskPrefs || {})[domain] || { times: [], slotsPerDay: '1 slot/day' };
+                const pref = (prefs.taskPrefs || {})[domain] || { times: [], slotsPerDay: '1 hour/day' };
                 const availableTimes = getAvailableTimeWindows(unavailableRanges);
                 return (
                   <div className="task-pref-card" key={domain}>
@@ -211,11 +226,11 @@ export default function Step2_Preferences({ domains, prefs, setPrefs, userName, 
                       onChange={(v) => updateTaskPref(domain, 'times', v)}
                       colorClass="on"
                     />
-                    <div className="task-pref-line">Slots per day</div>
+                    <div className="task-pref-line">How many hours per day?</div>
                     <ChipGroup
-                      chips={TASK_SLOT_CHIPS}
-                      value={pref.slotsPerDay || '1 slot/day'}
-                      onChange={(v) => updateTaskPref(domain, 'slotsPerDay', v || '1 slot/day')}
+                      chips={TASK_HOUR_CHIPS}
+                      value={pref.slotsPerDay || '1 hour/day'}
+                      onChange={(v) => updateTaskPref(domain, 'slotsPerDay', v || '1 hour/day')}
                       colorClass="on-a"
                     />
                   </div>

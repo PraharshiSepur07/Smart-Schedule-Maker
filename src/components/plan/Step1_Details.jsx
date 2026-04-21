@@ -158,7 +158,7 @@ export default function Step1_Details({
           <div className="two-col">
             <div className="qg">
               <span className="qlabel">Instrument / focus</span>
-              <ChipGroup chips={['Guitar','Piano','Vocals','Drums','Music theory','Production (DAW)']} value={music.instrument || ''} onChange={v => setMusic(p => ({ ...p, instrument: v }))} colorClass="on-r" />
+              <ChipGroup chips={['Guitar','Piano','Vocals','Drums','Bass','Violin','Ukulele','Flute','Saxophone','Music theory','Production (DAW)','Sound Engineering','Beatboxing']} value={music.instrument || ''} onChange={v => setMusic(p => ({ ...p, instrument: v }))} colorClass="on-r" />
             </div>
             <div className="qg">
               <span className="qlabel">Priority</span>
