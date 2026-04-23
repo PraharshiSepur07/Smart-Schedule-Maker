@@ -4,25 +4,54 @@ export default function HomePage() {
   const { showPage } = useApp();
 
   return (
-    <div className="page">
-      <div className="hero">
-        <div className="hero-badge">✨ Your smart daily planner</div>
-        <h1>Build habits.<br /><span>Own your time.</span></h1>
-        <p>Answer a few questions and get a personalised Mon–Fri schedule from 8 AM–4 PM — with real resources, progress tracking, streaks, and wellness activities built in.</p>
-        <div className="hero-btns">
-          <button className="btn-hero btn-hero-p" onClick={() => showPage('plan')}>Get started free →</button>
-          <button className="btn-hero btn-hero-s" onClick={() => showPage('history')}>View my schedules</button>
+    <div className="page home-shell">
+      <section className="home-hero">
+        <div className="home-hero-copy">
+          <div className="home-pill">Professional Time Planning</div>
+          <h1>Plan smart weeks, not random days.</h1>
+          <p>
+            SmartSchedule Pro turns your goals into practical date-based weekly plans,
+            balanced sessions, and export-ready calendars.
+          </p>
+          <div className="home-cta-row">
+            <button className="btn-hero btn-hero-p" onClick={() => showPage('plan')}>Create Schedule</button>
+            <button className="btn-hero btn-hero-s" onClick={() => showPage('history')}>Open Saved Plans</button>
+          </div>
         </div>
-      </div>
+        <div className="home-hero-panel">
+          <div className="home-panel-title">This Week Snapshot</div>
+          <div className="home-panel-list">
+            <div><span>Focus Hours</span><strong>21h 40m</strong></div>
+            <div><span>Break Balance</span><strong>Healthy</strong></div>
+            <div><span>Domains Active</span><strong>5</strong></div>
+            <div><span>Calendar Ready</span><strong>Yes</strong></div>
+          </div>
+          <div className="home-panel-note">Built for students and professionals who need consistency.</div>
+        </div>
+      </section>
+
+      <section className="home-metrics">
+        {[
+          ['Adaptive Weekly Plans', 'Deadline-aware weekly schedules with topic variation.'],
+          ['Intelligent Session Flow', 'Time blocks with optional relax breaks when space allows.'],
+          ['Trackable Execution', 'Tick progress, keep streaks, and review your consistency.'],
+          ['Calendar Export', 'Export by week and import into your Google Calendar workflow.']
+        ].map(([title, desc]) => (
+          <article key={title} className="home-metric-card">
+            <h3>{title}</h3>
+            <p>{desc}</p>
+          </article>
+        ))}
+      </section>
 
       <div className="features-grid">
         {[
-          { icon: '🎯', title: 'Smart scheduling', desc: 'Every domain gets at least one slot. High-priority topics get prime morning hours. No domain left behind.' },
-          { icon: '🔔', title: 'Timed notifications', desc: 'Real-time reminders saying "Hey! It\'s 9 AM — time to solve a LeetCode problem" with direct links.' },
-          { icon: '🧘', title: 'Mental wellness', desc: 'Meditation, breathing exercises, and brain games like Sudoku are woven into your schedule daily.' },
-          { icon: '🔥', title: 'Streak system', desc: 'Track your daily completion streaks. Build momentum and never break the chain.' },
-          { icon: '📊', title: 'Weekly analytics', desc: 'After 7 days, see your completion chart, domain breakdown, and consistency score.' },
-          { icon: '📅', title: 'Google Calendar', desc: 'Export your schedule directly to Google Calendar — one click syncs your whole week.' },
+          { icon: '🎯', title: 'Goal-aligned planning', desc: 'Schedule intensity adapts to your selected domains, priorities, and available hours.' },
+          { icon: '🧩', title: 'Structured slot design', desc: 'Multi-slot sessions, date headings, and cleaner sequencing reduce burnout.' },
+          { icon: '📊', title: 'Execution analytics', desc: 'Monitor what you completed, where you missed, and how your streak evolves.' },
+          { icon: '🔔', title: 'Time reminders', desc: 'Session reminders are generated directly from your active timetable.' },
+          { icon: '📅', title: 'Calendar integration', desc: 'Download your schedule in calendar format and import to your preferred account.' },
+          { icon: '🧘', title: 'Wellness balancing', desc: 'Mindful recovery moments are included to keep focus sustainable.' },
         ].map(f => (
           <div className="feature-card" key={f.title}>
             <div className="feature-icon">{f.icon}</div>
@@ -36,10 +65,10 @@ export default function HomePage() {
         <div style={{ fontSize: 17, fontWeight: 700, textAlign: 'center', marginBottom: '1.5rem', color: 'var(--text)' }}>How it works</div>
         <div className="steps-row">
           {[
-            { n: 1, lbl: 'Pick domains', sub: 'Coding, workout, interview, music, language, creative, study' },
-            { n: 2, lbl: 'Set your goals', sub: 'Topics, targets, deadlines, availability, intensity' },
-            { n: 3, lbl: 'Get your plan', sub: 'Balanced schedule with real links, wellness slots, lunch ideas' },
-            { n: 4, lbl: 'Track & win', sub: 'Tick slots, grow streaks, earn game rewards, see analytics' },
+            { n: 1, lbl: 'Select domains', sub: 'Choose what you are actively building this month.' },
+            { n: 2, lbl: 'Set timing & deadline', sub: 'Define daily minutes, slots, and overall schedule end date.' },
+            { n: 3, lbl: 'Generate weekly plan', sub: 'Get date-based columns and rotating weekly content.' },
+            { n: 4, lbl: 'Execute & iterate', sub: 'Track completion, export calendar, and improve every week.' },
           ].map(s => (
             <div className="step-box" key={s.n}>
               <div className="step-num">{s.n}</div>

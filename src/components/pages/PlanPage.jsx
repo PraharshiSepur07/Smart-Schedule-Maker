@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DAYS, SLOTS } from '../../data/constants';
 import { buildSchedule, scheduleNotifsSetup } from '../../utils/scheduleBuilder';
@@ -41,6 +41,7 @@ export default function PlanPage() {
     sSlots: '1 slot/day',
     workoutTime: 'Evening (3–4 PM)',
     wellness: 'Yes, daily',
+    scheduleDeadline: '',
     unavailableRanges: [{ from: '', to: '' }],
     taskPrefs: {}
   });
@@ -48,6 +49,38 @@ export default function PlanPage() {
 
   // Timetable
   const [timetable, setTimetable] = useState(null);
+
+  useEffect(() => {
+    const viewStep = sessionStorage.getItem('ssp_view_step');
+    if (viewStep !== '3' || !globalSchedule) return;
+
+    // Rehydrate form state so back/forward inside plan keeps consistent data.
+    setDomains(globalSchedule.domains || []);
+    setCoding(globalSchedule.coding || { priority: 'Medium' });
+    setWorkout(globalSchedule.workout || { days: '4 days', priority: 'Medium' });
+    setInterview(globalSchedule.interview || { priority: 'Medium' });
+    setMusic(globalSchedule.music || { priority: 'Medium' });
+    setLanguage(globalSchedule.language || { priority: 'Medium' });
+    setCreative(globalSchedule.creative || { priority: 'Medium' });
+    setStudy(globalSchedule.study || { priority: 'Medium' });
+    setPrefs(globalSchedule.prefs || {
+      avFrom: '8:30 AM',
+      avTo: '4:00 PM',
+      wHrs: '1 hour',
+      wSlots: '1 slot/day',
+      sHrs: '1 hour',
+      sSlots: '1 slot/day',
+      workoutTime: 'Evening (3–4 PM)',
+      wellness: 'Yes, daily',
+      scheduleDeadline: '',
+      unavailableRanges: [{ from: '', to: '' }],
+      taskPrefs: {}
+    });
+    setUserName(globalSchedule.userName || (currentUser ? currentUser.name : 'You'));
+    setTimetable(globalSchedule.timetable || null);
+    setStep(3);
+    sessionStorage.removeItem('ssp_view_step');
+  }, [globalSchedule, currentUser]);
 
   const goTo = (s) => { setStep(s); window.scrollTo(0, 0); };
 
@@ -60,8 +93,10 @@ export default function PlanPage() {
 
   const handleNext1 = () => goTo(2);
 
-  const handleNext2 = () => {
+  const handleNext2 = async () => {
     showLoad('Building your schedule...');
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
     const D = {
       domains,
       c: { ...coding, topics: coding.topics || [] },
@@ -74,7 +109,7 @@ export default function PlanPage() {
       p: prefs,
       userName: userName || (currentUser ? currentUser.name : 'You'),
     };
-    setTimeout(() => {
+    try {
       const result = buildSchedule(D);
       const ts = {};
       DAYS.forEach(day => { ts[day] = new Array(SLOTS.length).fill(false); });
@@ -84,9 +119,13 @@ export default function PlanPage() {
       updateStreak();
       // schedule notifications
       const ntimer = scheduleNotifsSetup(result.timetable, D.userName, addNotif, showToast);
-      hideLoad();
       goTo(3);
-    }, 800);
+    } catch (err) {
+      console.error('Schedule build failed:', err);
+      showToast(err?.message || 'Failed to build schedule');
+    } finally {
+      hideLoad();
+    }
   };
 
   // If globalSchedule is loaded from history, use that timetable

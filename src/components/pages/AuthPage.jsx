@@ -6,6 +6,8 @@ export default function AuthPage() {
   const { login, showPage, showToast } = useApp();
   const [tab, setTab] = useState('login');
   const [err, setErr] = useState('');
+  const [showLoginPw, setShowLoginPw] = useState(false);
+  const [showRegPw, setShowRegPw] = useState(false);
 
   // Login fields
   const [loginEmail, setLoginEmail] = useState('');
@@ -18,19 +20,35 @@ export default function AuthPage() {
 
   const showErr = (m) => setErr(m);
 
+  const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
+  const normalizePassword = (value) => String(value || '').trim();
+
   const doRegister = () => {
-    if (!regName || !regEmail || !regPw) return showErr('All fields required');
-    if (regPw.length < 6) return showErr('Password min 6 chars');
+    const name = String(regName || '').trim();
+    const email = normalizeEmail(regEmail);
+    const password = normalizePassword(regPw);
+    if (!name || !email || !password) return showErr('All fields required');
+    if (password.length < 6) return showErr('Password min 6 chars');
     const users = getUsers();
-    if (users.find(u => u.email === regEmail)) return showErr('Email already registered');
-    const u = { id: Date.now(), name: regName, email: regEmail, pass: regPw };
+    if (users.find(u => normalizeEmail(u.email) === email)) return showErr('Email already registered');
+    const u = { id: Date.now(), name, email, pass: password };
     saveUsers([...users, u]);
     login(u); showToast('Welcome, ' + u.name + '! 👋'); showPage('plan');
   };
 
   const doLogin = () => {
-    if (!loginEmail || !loginPw) return showErr('Enter email and password');
-    const u = getUsers().find(u => u.email === loginEmail && u.pass === loginPw);
+    const email = normalizeEmail(loginEmail);
+    const password = normalizePassword(loginPw);
+    if (!email || !password) return showErr('Enter email and password');
+    const users = getUsers();
+    if (!users.length) {
+      return showErr('No account found on this browser session. Create account first.');
+    }
+    const u = users.find(u => {
+      const emailMatch = normalizeEmail(u.email) === email;
+      const passwordMatch = String(u.pass || '') === password || normalizePassword(u.pass) === password;
+      return emailMatch && passwordMatch;
+    });
     if (!u) return showErr('Incorrect email or password');
     login(u); showToast('Welcome, ' + u.name + '! 👋'); showPage('plan');
   };
@@ -65,7 +83,11 @@ export default function AuthPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">Password</label>
-                <input type="password" className="form-input" placeholder="••••••••" value={loginPw} onChange={e => setLoginPw(e.target.value)} />
+                <input type={showLoginPw ? 'text' : 'password'} className="form-input" placeholder="••••••••" value={loginPw} onChange={e => setLoginPw(e.target.value)} />
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--text3)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={showLoginPw} onChange={e => setShowLoginPw(e.target.checked)} />
+                  Show password
+                </label>
               </div>
               <button className="auth-btn" onClick={doLogin}>Sign in</button>
               <div className="divider">or</div>
@@ -83,7 +105,11 @@ export default function AuthPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">Password</label>
-                <input type="password" className="form-input" placeholder="Min 6 characters" value={regPw} onChange={e => setRegPw(e.target.value)} />
+                <input type={showRegPw ? 'text' : 'password'} className="form-input" placeholder="Min 6 characters" value={regPw} onChange={e => setRegPw(e.target.value)} />
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--text3)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={showRegPw} onChange={e => setShowRegPw(e.target.checked)} />
+                  Show password
+                </label>
               </div>
               <button className="auth-btn" onClick={doRegister}>Create account</button>
             </div>

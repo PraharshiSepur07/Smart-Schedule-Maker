@@ -2,12 +2,22 @@
 // DATA TABLES — all constants from the original HTML
 // ══════════════════════════════════════════════════
 export const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
-export const SLOT_HOURS = Array.from({ length: 17 }, (_, i) => 6 + i); // 06:00..22:00
+export const SLOT_MINUTES = 6;
+const DAY_START_MINUTES = 6 * 60;
+const DAY_END_MINUTES = 23 * 60;
+const SLOT_STARTS = Array.from(
+  { length: Math.floor((DAY_END_MINUTES - DAY_START_MINUTES) / SLOT_MINUTES) },
+  (_, i) => DAY_START_MINUTES + i * SLOT_MINUTES
+);
+export const SLOT_HOURS = SLOT_STARTS.map((mins) => mins / 60);
+const fmtHour = (h) => {
+  const hh = Math.floor(h);
+  const mm = Math.round((h - hh) * 60);
+  return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+};
 export const SLOTS = SLOT_HOURS.map((h) => {
-  const start = String(h).padStart(2, '0') + ':00';
-  const endHour = (h + 1) % 24;
-  const end = String(endHour).padStart(2, '0') + ':00';
-  return start + '-' + end;
+  const endHour = (h + SLOT_MINUTES / 60) % 24;
+  return fmtHour(h) + '-' + fmtHour(endHour);
 });
 
 export const PRACTICE_PLATFORMS = [

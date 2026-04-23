@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:demo": "powershell -ExecutionPolicy Bypass -File scripts/free-port.ps1 && vite --mode demo",
     "build": "vite build",
     "preview": "vite preview"
   },

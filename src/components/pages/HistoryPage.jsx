@@ -20,9 +20,9 @@ export default function HistoryPage() {
     DAYS.forEach(day => { if (!ts[day]) ts[day] = new Array(SLOTS.length).fill(false); });
     setGlobalSchedule(s);
     setTickState(ts);
-    showPage('plan');
-    // We need plan page to go to step 3 — use a small hack via sessionStorage
+    // Tell Plan page to open directly on the timetable for this saved schedule.
     sessionStorage.setItem('ssp_view_step', '3');
+    showPage('plan');
   };
 
   return (

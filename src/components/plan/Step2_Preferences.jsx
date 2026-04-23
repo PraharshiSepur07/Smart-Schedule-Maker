@@ -30,6 +30,14 @@ const DOMAIN_LABELS = {
   study: 'Study'
 };
 
+const PERIOD_OPTIONS = ['morning', 'afternoon', 'evening', 'night'];
+const PERIOD_LABELS = {
+  morning: 'Morning (6-12)',
+  afternoon: 'Afternoon (12-17)',
+  evening: 'Evening (17-22)',
+  night: 'Night (22-6)'
+};
+
 function parseTimeToMinutes(label) {
   if (!label || typeof label !== 'string') return null;
   const m = label.trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
@@ -203,6 +211,16 @@ export default function Step2_Preferences({ domains, prefs, setPrefs, userName, 
   const [activeTimePicker, setActiveTimePicker] = useState(null); // { rangeIdx, field: 'from'|'to' }
 
   useEffect(() => {
+    if (prefs.scheduleDeadline) return;
+    const target = new Date();
+    target.setDate(target.getDate() + 30);
+    const y = target.getFullYear();
+    const m = String(target.getMonth() + 1).padStart(2, '0');
+    const d = String(target.getDate()).padStart(2, '0');
+    setPrefs((p) => ({ ...p, scheduleDeadline: `${y}-${m}-${d}` }));
+  }, [prefs.scheduleDeadline, setPrefs]);
+
+  useEffect(() => {
     const allowed = new Set(availableTimeWindows);
     if (!domains || !domains.length) return;
 
@@ -254,7 +272,7 @@ export default function Step2_Preferences({ domains, prefs, setPrefs, userName, 
       taskPrefs: {
         ...(p.taskPrefs || {}),
         [domain]: {
-          ...((p.taskPrefs || {})[domain] || { time: 'Any time', minutesPerDay: 60 }),
+          ...((p.taskPrefs || {})[domain] || { time: 'Any time', minutesPerDay: 60, periods: [] }),
           [key]: value
         }
       }
@@ -276,6 +294,18 @@ export default function Step2_Preferences({ domains, prefs, setPrefs, userName, 
 
       <div className="q-card">
         <div className="q-title">Daily availability &amp; preferences</div>
+
+        <div className="qg">
+          <span className="qlabel">Whole schedule deadline</span>
+          <div className="q-subhint">Set when this plan should finish. We will generate multiple weekly schedules up to this date.</div>
+          <input
+            type="date"
+            className="form-input"
+            value={prefs.scheduleDeadline || ''}
+            onChange={(e) => setPrefs((p) => ({ ...p, scheduleDeadline: e.target.value }))}
+            style={{ maxWidth: 260 }}
+          />
+        </div>
 
         <div className="qg">
           <span className="qlabel">When are you not available?</span>
@@ -314,7 +344,7 @@ export default function Step2_Preferences({ domains, prefs, setPrefs, userName, 
             </div>
             <div className="task-pref-grid">
               {domains.map((domain) => {
-                const pref = (prefs.taskPrefs || {})[domain] || { times: [], minutesPerDay: 60, slotsPerDay: 1 };
+                const pref = (prefs.taskPrefs || {})[domain] || { times: [], periods: [], minutesPerDay: 60, slotsPerDay: 1 };
                 const prefMinutes = Number.isFinite(Number(pref.minutesPerDay))
                   ? Number(pref.minutesPerDay)
                   : 60;
@@ -328,6 +358,18 @@ export default function Step2_Preferences({ domains, prefs, setPrefs, userName, 
                       onChange={(v) => updateTaskPref(domain, 'times', v)}
                       colorClass="on"
                     />
+                    <div className="task-pref-line">Preferred periods</div>
+                    <MultiChipGroup
+                      chips={PERIOD_OPTIONS}
+                      values={Array.isArray(pref.periods) ? pref.periods : []}
+                      onChange={(v) => updateTaskPref(domain, 'periods', v)}
+                      colorClass="on"
+                    />
+                    <div className="q-subhint" style={{ marginTop: 6 }}>
+                      {Array.isArray(pref.periods) && pref.periods.length
+                        ? pref.periods.map((p) => PERIOD_LABELS[p] || p).join(', ')
+                        : 'No period selected'}
+                    </div>
                     <div className="task-pref-line">Total minutes per day</div>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
