@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DAYS, SLOTS, SLOT_MINUTES } from '../../data/constants';
 import { tagCls, tagLabel } from '../../utils/scheduleBuilder';
-import { getGoogleSyncSetupState, syncScheduleToGoogleCalendar } from '../../utils/googleCalendar';
+import { getGoogleSyncSetupState, syncScheduleToGoogleCalendar, warmupGoogleIdentity } from '../../utils/googleCalendar';
 import { getStreak, saveSchedule } from '../../utils/storage';
 
 export default function Step3_Timetable({ timetable, tickState, setTickState, userName, onBack, onNext }) {
@@ -31,6 +31,34 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
   const activeTimetable = activeWeekData ? activeWeekData.timetable : timetable;
   const columnLabels = activeWeekData ? activeWeekData.dates : Object.fromEntries(DAYS.map((d) => [d, d]));
   const slotCount = SLOTS.length;
+  const normalizeGfgLink = (href) => {
+    if (!href || typeof href !== 'string') return '';
+    try {
+      const url = new URL(href);
+      const host = (url.hostname || '').toLowerCase();
+      const path = (url.pathname || '').toLowerCase();
+      if (!host.includes('geeksforgeeks.org')) return '';
+      if (path.includes('music-and-arts')) return 'https://www.geeksforgeeks.org/?s=music';
+      if (path.includes('digital-art')) return 'https://www.geeksforgeeks.org/?s=digital+art';
+      if (path.includes('adobe-photoshop-tutorial')) return 'https://www.geeksforgeeks.org/?s=digital+art';
+      if (path.includes('ui-ux-design')) return 'https://www.geeksforgeeks.org/?s=ui+ux+design';
+      return url.toString();
+    } catch {
+      return '';
+    }
+  };
+
+  const getStudyFallbackLinks = (cell) => {
+    if (!cell || cell.type !== 'study') return null;
+    const raw = String(cell.title || '').replace(/^Study\s*[-:]\s*/i, '').replace(/\(session\s*\d+\)\s*$/i, '').trim();
+    const subject = raw || 'study';
+    const q = encodeURIComponent(subject);
+    return {
+      guide: cell.link || `https://www.khanacademy.org/search?page_search_query=${q}`,
+      yt: cell.ytLink || `https://www.youtube.com/results?search_query=${encodeURIComponent(subject + ' tutorial')}`,
+      gfg: cell.gfgLink || `https://www.geeksforgeeks.org/?s=${q}`,
+    };
+  };
 
   const parseSlotStartMinutes = (slotLabel) => {
     const start = String(slotLabel || '').split('-')[0] || '';
@@ -171,6 +199,13 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
   }, []);
 
   useEffect(() => {
+    if (!syncSetup.configured) return;
+    warmupGoogleIdentity().catch((err) => {
+      console.warn('Google Identity warmup failed:', err);
+    });
+  }, [syncSetup.configured]);
+
+  useEffect(() => {
     if (!isSyncing) return undefined;
     const onBeforeUnload = (e) => {
       e.preventDefault();
@@ -222,6 +257,7 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
     '3. Enable Google Calendar API',
     '4. Add Authorized JavaScript Origins:',
     '   - http://localhost:5173',
+    '   - http://localhost:5174',
     '   - Your deployed domain',
     '5. Add .env:',
     '   VITE_GOOGLE_CLIENT_ID=your_client_id_here'
@@ -309,10 +345,13 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
         const code = err?.code || '';
         if (code === 'login-cancelled') {
           showToast('Login cancelled');
+        } else if (code === 'popup-blocked') {
+          showToast('Popup blocked. Allow popups for this site and try again.');
         } else if (code === 'permission-denied') {
           showToast('Permission denied');
         } else if (code === 'token-failed' || code === 'oauth-failed') {
-          showToast('Google login failed. Please try again.');
+          const detail = err?.detail?.error_description || err?.detail?.error || '';
+          showToast(detail ? `Google login failed: ${detail}` : 'Google login failed. Please try again.');
         } else if (code === 'api-failed' || code === 'network-failed') {
           showToast('Failed to sync events');
         } else if (code === 'not-configured') {
@@ -405,7 +444,7 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
             1) Create OAuth client in Google Cloud Console.
           </div>
           <div>2) Enable Google Calendar API for the same project.</div>
-          <div>3) Add authorized origins (localhost + deployed URL).</div>
+          <div>3) Add authorized origins (http://localhost:5173, http://localhost:5174, and deployed URL).</div>
           <div>4) Set VITE_GOOGLE_CLIENT_ID in your .env file.</div>
           <div style={{ marginTop: 10 }}>
             <button className="tt-btn" onClick={copySetupChecklist}>Copy Setup Steps</button>
@@ -494,15 +533,22 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
                       )}
                       <div className="ctitle">{c.title}</div>
                       <div className="cdet">{c.detail}</div>
+                      {(() => {
+                        const studyFallback = getStudyFallbackLinks(c);
+                        return (
                       <div className="res-links">
                         {c.lc && <a className="res-link rl-lc" href={c.lc.u} target="_blank" rel="noreferrer">🔗 LeetCode</a>}
-                        {c.gfg && <a className="res-link rl-gfg" href={c.gfg.u} target="_blank" rel="noreferrer">📗 GFG</a>}
-                        {c.gfgLink && <a className="res-link rl-gfg" href={c.gfgLink} target="_blank" rel="noreferrer">📗 GFG</a>}
+                        {c.gfg && normalizeGfgLink(c.gfg.u) && <a className="res-link rl-gfg" href={normalizeGfgLink(c.gfg.u)} target="_blank" rel="noreferrer">📗 GFG</a>}
+                        {c.gfgLink && normalizeGfgLink(c.gfgLink) && <a className="res-link rl-gfg" href={normalizeGfgLink(c.gfgLink)} target="_blank" rel="noreferrer">📗 GFG</a>}
+                        {!c.gfg && !c.gfgLink && studyFallback?.gfg && <a className="res-link rl-gfg" href={studyFallback.gfg} target="_blank" rel="noreferrer">📗 GFG</a>}
                         {c.ytLink && <a className="res-link rl-yt" href={c.ytLink} target="_blank" rel="noreferrer">▶ Tutorial</a>}
+                        {!c.ytLink && studyFallback?.yt && <a className="res-link rl-yt" href={studyFallback.yt} target="_blank" rel="noreferrer">▶ Tutorial</a>}
                         {c.duoLink && <a className="res-link rl-duo" href={c.duoLink} target="_blank" rel="noreferrer">🦜 Duolingo</a>}
-                        {c.link && <a className="res-link rl-med" href={c.link} target="_blank" rel="noreferrer">🔗 Guide</a>}
+                        {(c.link || studyFallback?.guide) && <a className="res-link rl-med" href={c.link || studyFallback?.guide} target="_blank" rel="noreferrer">🔗 Guide</a>}
                         {c.isLunch && <span className="res-link rl-food" title={c.lunchNote}>🥗 Meal tip</span>}
                       </div>
+                        );
+                      })()}
                       <div className="tick-wrap">
                         {c.type !== 'break' && <button className={`tick-btn${ticked ? ' ticked' : ''}`} onClick={() => doTick(day, si)}>✓</button>}
                       </div>

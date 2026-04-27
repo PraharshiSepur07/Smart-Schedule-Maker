@@ -151,7 +151,7 @@ export default function Step4_SessionGuide({ domains, coding: C, workout: W, int
             <RecTitle t={`🎵 Music practice guide — ${inst}`} />
             <table className="rec-tt">
               <thead><tr><th>Day</th><th>Focus</th><th>Resource</th></tr></thead>
-              <tbody>{days.map(([d, f]) => <tr key={d}><td style={{ color: 'var(--text3)', fontWeight: 700 }}>{d}</td><td>{f}</td><td><a href={yt} target="_blank" rel="noreferrer" className="res-link rl-yt">▶ Tutorial</a> <a href={MUSIC_GFG} target="_blank" rel="noreferrer" className="res-link rl-gfg">GFG</a></td></tr>)}</tbody>
+              <tbody>{days.map(([d, f]) => <tr key={d}><td style={{ color: 'var(--text3)', fontWeight: 700 }}>{d}</td><td>{f}</td><td><a href={yt} target="_blank" rel="noreferrer" className="res-link rl-yt">▶ Tutorial</a>{MUSIC_GFG && <> <a href={MUSIC_GFG} target="_blank" rel="noreferrer" className="res-link rl-gfg">GFG</a></>}</td></tr>)}</tbody>
             </table>
           </RecCard>
         );
@@ -178,14 +178,14 @@ export default function Step4_SessionGuide({ domains, coding: C, workout: W, int
       {hCr && (() => {
         const med = CR.medium || 'Drawing / Sketching';
         const yt2 = CREATIVE_VID[med] || '#';
-        const gfg2 = CREATIVE_GFG[med] || '#';
+        const gfg2 = CREATIVE_GFG[med] || '';
         const days = [['Monday','Warm-up: 5 quick sketches or colour swatches'],['Tuesday','Technique focus: 1 core skill in depth'],['Wednesday','Copy a master work — study light, shadow, form'],['Thursday','Original piece — apply what you\'ve learned'],['Friday','Critique yourself: what worked, what to improve?']];
         return (
           <RecCard>
             <RecTitle t={`🎨 Creative arts guide — ${med}`} />
             <table className="rec-tt">
               <thead><tr><th>Day</th><th>Exercise</th><th>Resource</th></tr></thead>
-              <tbody>{days.map(([d, ex]) => <tr key={d}><td style={{ color: 'var(--text3)', fontWeight: 700 }}>{d}</td><td>{ex}</td><td><a href={yt2} target="_blank" rel="noreferrer" className="res-link rl-yt">▶ Tutorial</a>{gfg2 !== '#' && <> <a href={gfg2} target="_blank" rel="noreferrer" className="res-link rl-gfg">GFG</a></>}</td></tr>)}</tbody>
+              <tbody>{days.map(([d, ex]) => <tr key={d}><td style={{ color: 'var(--text3)', fontWeight: 700 }}>{d}</td><td>{ex}</td><td><a href={yt2} target="_blank" rel="noreferrer" className="res-link rl-yt">▶ Tutorial</a>{gfg2 && <> <a href={gfg2} target="_blank" rel="noreferrer" className="res-link rl-gfg">GFG</a></>}</td></tr>)}</tbody>
             </table>
           </RecCard>
         );

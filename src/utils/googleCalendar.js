@@ -106,6 +106,10 @@ function loadGoogleIdentityScript() {
   return gsiLoadPromise;
 }
 
+export async function warmupGoogleIdentity() {
+  await loadGoogleIdentityScript();
+}
+
 function parseSlotStart(slotLabel) {
   const match = String(slotLabel || '').match(/^(\d{2}):(\d{2})/);
   if (!match) return { hour: 8, minute: 0 };
@@ -167,12 +171,13 @@ function buildWeekEventEntries(schedule) {
 
 async function getAccessToken(clientId, loginHint) {
   await loadGoogleIdentityScript();
+  const normalizedHint = String(loginHint || '').trim();
 
   return new Promise((resolve, reject) => {
     const tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: GOOGLE_SCOPE,
-      hint: loginHint || '',
+      login_hint: normalizedHint || undefined,
       callback: (response) => {
         if (response?.error) {
           if (response.error === 'access_denied') {
@@ -194,11 +199,18 @@ async function getAccessToken(clientId, loginHint) {
           reject(toSyncError('login-cancelled', 'Login cancelled', err));
           return;
         }
+        if (type.includes('popup_failed_to_open') || type.includes('popup_blocked')) {
+          reject(toSyncError('popup-blocked', 'Google sign-in popup was blocked by the browser', err));
+          return;
+        }
         reject(toSyncError('oauth-failed', err?.error_description || 'Google OAuth failed', err));
       },
     });
 
-    tokenClient.requestAccessToken({ prompt: 'consent' });
+    tokenClient.requestAccessToken({
+      prompt: normalizedHint ? 'consent' : 'select_account consent',
+      login_hint: normalizedHint || undefined,
+    });
   });
 }
 

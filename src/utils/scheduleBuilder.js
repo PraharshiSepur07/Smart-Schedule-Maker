@@ -110,15 +110,10 @@ function buildSessionDurations(minutesPerDay) {
 }
 
 function preferredSlotsFromLabels(labels, periods = []) {
-  const hasLabels = Array.isArray(labels) && labels.length > 0;
-  const hasPeriods = Array.isArray(periods) && periods.length > 0;
-  if (!hasLabels && !hasPeriods) {
+  if ((!Array.isArray(labels) || !labels.length) && (!Array.isArray(periods) || !periods.length)) {
     return Array.from({ length: SLOT_HOURS.length }, (_, i) => i);
   }
-
-  const labelSlots = new Set();
-  const periodSlots = new Set();
-
+  const allSlots = new Set();
   (labels || []).forEach((label) => {
     const v = String(label || '');
     const range = v.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
@@ -133,7 +128,7 @@ function preferredSlotsFromLabels(labels, periods = []) {
         const inRange = start < end
           ? slotHour >= start && slotHour < end
           : slotHour >= start || slotHour < end;
-        if (inRange) labelSlots.add(idx);
+        if (inRange) allSlots.add(idx);
       });
       return;
     }
@@ -152,7 +147,7 @@ function preferredSlotsFromLabels(labels, periods = []) {
           bestIdx = idx;
         }
       });
-      labelSlots.add(bestIdx);
+      allSlots.add(bestIdx);
     }
   });
   (periods || []).forEach((period) => {
@@ -162,40 +157,11 @@ function preferredSlotsFromLabels(labels, periods = []) {
         const inRange = startHour < endHour
           ? slotHour >= startHour && slotHour < endHour
           : slotHour >= startHour || slotHour < endHour;
-        if (inRange) periodSlots.add(idx);
+        if (inRange) allSlots.add(idx);
       });
     });
   });
-
-  let result = [];
-  if (hasLabels && hasPeriods) {
-    const intersection = Array.from(labelSlots).filter((idx) => periodSlots.has(idx));
-    result = intersection.length ? intersection : Array.from(periodSlots);
-  } else if (hasPeriods) {
-    result = Array.from(periodSlots);
-  } else {
-    result = Array.from(labelSlots);
-  }
-
-  return result.length ? result.sort((a, b) => a - b) : Array.from({ length: SLOT_HOURS.length }, (_, i) => i);
-}
-
-function getMatchedPeriodForSlot(periods, slotIdx) {
-  if (!Array.isArray(periods) || !periods.length) return '';
-  if (slotIdx < 0 || slotIdx >= SLOT_HOURS.length) return '';
-  const slotHour = SLOT_HOURS[slotIdx];
-  for (let i = 0; i < periods.length; i++) {
-    const period = String(periods[i] || '').toLowerCase();
-    const windows = PERIOD_WINDOWS[period] || [];
-    for (let w = 0; w < windows.length; w++) {
-      const [startHour, endHour] = windows[w];
-      const inRange = startHour < endHour
-        ? slotHour >= startHour && slotHour < endHour
-        : slotHour >= startHour || slotHour < endHour;
-      if (inRange) return period;
-    }
-  }
-  return '';
+  return allSlots.size ? Array.from(allSlots).sort((a, b) => a - b) : Array.from({ length: SLOT_HOURS.length }, (_, i) => i);
 }
 
 function sessionDurationForDomain(domain, itemMeta, domainPlan) {
@@ -210,6 +176,21 @@ function slotsNeededForDuration(durationMinutes) {
   const mins = Number(durationMinutes);
   if (!Number.isFinite(mins) || mins <= 0) return 1;
   return Math.max(1, Math.ceil(mins / SLOT_MINUTES));
+}
+
+function buildStudyGuideLink(subject) {
+  const q = encodeURIComponent(String(subject || 'study').trim());
+  return `https://www.khanacademy.org/search?page_search_query=${q}`;
+}
+
+function buildStudyYouTubeLink(subject) {
+  const q = encodeURIComponent(`${String(subject || 'study').trim()} tutorial`);
+  return `https://www.youtube.com/results?search_query=${q}`;
+}
+
+function buildStudyGfgLink(subject) {
+  const q = encodeURIComponent(String(subject || 'study').trim());
+  return `https://www.geeksforgeeks.org/?s=${q}`;
 }
 
 function getMondayStart(offsetWeeks = 0) {
@@ -436,7 +417,6 @@ export function buildSchedule(D) {
   const blocked = Array.from({ length: 5 }, () => new Array(slotCount).fill(false));
   const occupied = Array.from({ length: 5 }, () => new Array(slotCount).fill(false));
   const placedCount = Array.from({ length: 5 }, () => ({}));
-  const placedPeriodCount = Array.from({ length: 5 }, () => ({}));
 
   (D.p.unavailableRanges || []).forEach((r) => {
     if (!r || !r.from || !r.to) return;
@@ -482,13 +462,6 @@ export function buildSchedule(D) {
 
   function markPlaced(domain, dayIdx, slotIdx, durationMinutes = 60, title = 'Session') {
     placedCount[dayIdx][domain] = (placedCount[dayIdx][domain] || 0) + 1;
-    const domainPeriods = ((taskPrefs[domain] && taskPrefs[domain].periods) || []).map((p) => String(p).toLowerCase());
-    const matchedPeriod = getMatchedPeriodForSlot(domainPeriods, slotIdx);
-    if (matchedPeriod) {
-      if (!placedPeriodCount[dayIdx][domain]) placedPeriodCount[dayIdx][domain] = {};
-      placedPeriodCount[dayIdx][domain][matchedPeriod] = (placedPeriodCount[dayIdx][domain][matchedPeriod] || 0) + 1;
-    }
-
     const needed = slotsNeededForDuration(durationMinutes);
     for (let k = 0; k < needed; k++) {
       const si = slotIdx + k;
@@ -565,18 +538,6 @@ export function buildSchedule(D) {
     if (prev && prev.type === 'break') penalty -= 1;
     if (next && next.type === 'break') penalty -= 1;
 
-    // If multiple periods are selected, distribute sessions across those periods.
-    const domainPeriods = ((taskPrefs[item.domain] && taskPrefs[item.domain].periods) || []).map((p) => String(p).toLowerCase());
-    if (domainPeriods.length > 1 && (maxPerDay[item.domain] || 1) > 1) {
-      const slotPeriod = getMatchedPeriodForSlot(domainPeriods, slotIdx);
-      const dayMap = placedPeriodCount[dayIdx][item.domain] || {};
-      const usedDistinct = domainPeriods.filter((p) => (dayMap[p] || 0) > 0).length;
-      if (slotPeriod) {
-        if ((dayMap[slotPeriod] || 0) > 0 && usedDistinct < domainPeriods.length) penalty += 16;
-        if ((dayMap[slotPeriod] || 0) === 0) penalty -= 4;
-      }
-    }
-
     return penalty;
   }
 
@@ -620,6 +581,12 @@ export function buildSchedule(D) {
       const med = D.cr.medium || 'Drawing / Sketching';
       cell.ytLink = CREATIVE_VID[med] || '';
       cell.gfgLink = CREATIVE_GFG[med] || '';
+    }
+    if (item.domain === 'study') {
+      const subject = D.st.subject || 'Study';
+      cell.link = buildStudyGuideLink(subject);
+      cell.ytLink = buildStudyYouTubeLink(subject);
+      cell.gfgLink = buildStudyGfgLink(subject);
     }
     if (item.domain === 'well') cell.link = item.meta.link;
     return cell;

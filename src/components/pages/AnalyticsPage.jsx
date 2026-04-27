@@ -5,7 +5,9 @@ import { tagLabel } from '../../utils/scheduleBuilder';
 export default function AnalyticsPage() {
   const { currentUser, showPage } = useApp();
   const uid = currentUser ? currentUser.id : 'guest';
-  const saved = getSaved().filter(s => s.userId === uid || s.userId === 'guest').slice(0, 7);
+  const allSaved = getSaved();
+  const scopedSaved = allSaved.filter(s => s.userId === uid || s.userId === 'guest').slice(0, 7);
+  const saved = scopedSaved.length ? scopedSaved : allSaved.slice(0, 7);
   const streak = getStreak();
 
   if (!saved.length) {
@@ -24,7 +26,9 @@ export default function AnalyticsPage() {
   saved.forEach(s => {
     (s.domains || []).forEach(d => {
       const tt = s.timetable || {};
-      Object.values(tt).forEach(day => day.forEach(c => { if (c.type === d) domainTotals[d] = (domainTotals[d] || 0) + 1; }));
+      Object.values(tt).forEach(day => day.forEach((c) => {
+        if (c && c.type === d) domainTotals[d] = (domainTotals[d] || 0) + 1;
+      }));
     });
     const ts = s.tickState || {};
     let ticked = 0, total = 0;

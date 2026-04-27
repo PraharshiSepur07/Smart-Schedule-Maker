@@ -124,7 +124,7 @@ export const MUSIC_VID = {
   'Music theory':'https://www.youtube.com/results?search_query=music+theory+basics',
   'Production (DAW)':'https://www.youtube.com/results?search_query=fl+studio+ableton+beginners'
 };
-export const MUSIC_GFG = 'https://www.geeksforgeeks.org/music-and-arts/';
+export const MUSIC_GFG = 'https://www.geeksforgeeks.org/?s=music';
 
 export const LANG_LINKS = {
   'Spanish':{duo:'https://www.duolingo.com/course/es/en/Learn-Spanish',yt:'https://www.youtube.com/results?search_query=spanish+for+beginners'},
@@ -143,9 +143,9 @@ export const CREATIVE_VID = {
   'Photography':'https://www.youtube.com/results?search_query=photography+basics+beginners'
 };
 export const CREATIVE_GFG = {
-  'Drawing / Sketching':'https://www.geeksforgeeks.org/digital-art/',
-  'Painting (watercolor)':'https://www.youtube.com/results?search_query=watercolor+tutorial',
-  'Digital art':'https://www.geeksforgeeks.org/adobe-photoshop-tutorial/',
-  'UI/UX design':'https://www.geeksforgeeks.org/ui-ux-design/',
-  'Photography':'https://www.youtube.com/results?search_query=photography+tips'
+  'Drawing / Sketching':'https://www.geeksforgeeks.org/?s=sketching',
+  'Painting (watercolor)':'https://www.geeksforgeeks.org/?s=watercolor',
+  'Digital art':'https://www.geeksforgeeks.org/?s=digital+art',
+  'UI/UX design':'https://www.geeksforgeeks.org/?s=ui+ux+design',
+  'Photography':'https://www.geeksforgeeks.org/?s=photography'
 };
