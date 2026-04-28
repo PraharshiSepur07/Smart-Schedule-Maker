@@ -319,28 +319,158 @@ export function buildSchedule(D) {
   const hCr = D.domains.includes('creative');
   const hS = D.domains.includes('study');
 
-  const fixedRequiredDomains = ['workout', 'coding', 'language', 'study', 'music'];
-  const useFixedDailyLayout = fixedRequiredDomains.every((domain) => D.domains.includes(domain));
+  const useStructuredDailyLayout = Array.isArray(D.domains) && D.domains.length > 0;
 
-  if (useFixedDailyLayout) {
-    const fixedBlocks = [
-      { start: '08:00', end: '09:00', domain: 'workout', title: 'Workout — Daily routine', detail: 'Full-body training block', durationMinutes: 60 },
-      { start: '09:00', end: '10:30', domain: 'coding', title: 'Coding — Practice', detail: 'Focused coding block', durationMinutes: 90 },
-      { start: '10:30', end: '10:40', domain: 'break', title: '😌 Relax break', detail: 'Quick reset: breathe, hydrate, stretch', durationMinutes: 10, isRelax: true },
-      { start: '10:40', end: '12:00', domain: 'language', title: `Language — ${(D.l && D.l.lang) || 'Practice'}`, detail: 'Language practice block', durationMinutes: 80 },
-      { start: '12:00', end: '13:00', domain: 'break', title: '🍱 Lunch break', detail: 'Lunch break', durationMinutes: 60, isLunch: true },
-      { start: '13:00', end: '14:00', domain: 'study', title: `Study — ${(D.st && D.st.subject) || 'Study'}`, detail: 'Deep study block', durationMinutes: 60 },
-      { start: '14:00', end: '14:10', domain: 'break', title: '😌 Relax break', detail: 'Quick reset: breathe, hydrate, stretch', durationMinutes: 10, isRelax: true },
-      { start: '14:10', end: '15:10', domain: 'study', title: `Study — ${(D.st && D.st.subject) || 'Study'}`, detail: 'Deep study block', durationMinutes: 60 },
-      { start: '15:10', end: '16:40', domain: 'coding', title: 'Coding — Practice', detail: 'Focused coding block', durationMinutes: 90 },
-      { start: '16:40', end: '16:50', domain: 'break', title: '😌 Relax break', detail: 'Quick reset: breathe, hydrate, stretch', durationMinutes: 10, isRelax: true },
-      { start: '16:50', end: '17:20', domain: 'music', title: `Music — ${(D.m && D.m.instrument) || 'Practice'}`, detail: 'Music practice block', durationMinutes: 30 },
-      { start: '17:20', end: '18:20', domain: 'workout', title: 'Workout — Evening routine', detail: 'Second workout block', durationMinutes: 60 },
-      { start: '18:20', end: '23:00', domain: 'language', title: `Language — ${(D.l && D.l.lang) || 'Practice'}`, detail: 'Language practice for the rest of the day', durationMinutes: 280 },
-    ];
+  if (useStructuredDailyLayout) {
+    const selectedDomains = Array.from(new Set(D.domains));
+    const exactRequiredDomains = ['coding', 'workout', 'music', 'study', 'creative'];
+    const useExactRequestedPattern = exactRequiredDomains.every((domain) => selectedDomains.includes(domain));
+    const corePatternDomains = ['coding', 'workout', 'language', 'music', 'study'];
+    const useCoreLockedPattern = selectedDomains.length === corePatternDomains.length
+      && corePatternDomains.every((domain) => selectedDomains.includes(domain));
+    const coreLockedByStart = {
+      '08:00': 'workout',
+      '09:00': 'coding',
+      '10:40': 'language',
+      '11:10': 'study',
+      '13:00': 'study',
+      '14:10': 'study',
+      '15:10': 'coding',
+      '16:50': 'music',
+      '17:20': 'workout',
+      '18:20': 'language',
+    };
+
+    const structuredTemplate = useExactRequestedPattern
+      ? [
+          { type: 'domain', domain: 'workout', start: '08:00', end: '09:00', durationMinutes: 60, window: 'morning' },
+          { type: 'domain', domain: 'coding', start: '09:00', end: '10:30', durationMinutes: 90, window: 'morning' },
+          { type: 'break', start: '10:30', end: '10:40', durationMinutes: 10, isRelax: true },
+          { type: 'break', start: '10:40', end: '12:00', durationMinutes: 80, isRelax: true },
+          { type: 'break', start: '12:00', end: '13:00', durationMinutes: 60, isLunch: true },
+          { type: 'domain', domain: 'music', start: '13:00', end: '13:30', durationMinutes: 30, window: 'afternoon' },
+          { type: 'domain', domain: 'study', start: '13:30', end: '14:30', durationMinutes: 60, window: 'afternoon' },
+          { type: 'break', start: '14:30', end: '14:40', durationMinutes: 10, isRelax: true },
+          { type: 'domain', domain: 'study', start: '14:40', end: '15:40', durationMinutes: 60, window: 'afternoon' },
+          { type: 'domain', domain: 'coding', start: '15:40', end: '17:10', durationMinutes: 90, window: 'afternoon' },
+          { type: 'break', start: '17:10', end: '17:30', durationMinutes: 20, isRelax: true },
+          { type: 'domain', domain: 'workout', start: '17:30', end: '18:30', durationMinutes: 60, window: 'evening' },
+          { type: 'break', start: '18:30', end: '19:00', durationMinutes: 30, isRelax: true },
+          { type: 'domain', domain: 'creative', start: '19:00', end: '20:00', durationMinutes: 60, window: 'evening' },
+        ]
+      : [
+          { type: 'domain', start: '08:00', end: '09:00', durationMinutes: 60, window: 'morning', preferred: ['workout', 'coding', 'study', 'interview', 'language', 'creative', 'music'] },
+          { type: 'domain', start: '09:00', end: '10:30', durationMinutes: 90, window: 'morning', preferred: ['coding', 'study', 'interview', 'creative', 'language', 'music', 'workout'] },
+          { type: 'break', start: '10:30', end: '10:40', durationMinutes: 10, isRelax: true },
+          { type: 'domain', start: '10:40', end: '11:10', durationMinutes: 30, window: 'morning', preferred: ['language', 'music', 'interview', 'study', 'coding', 'creative', 'workout'] },
+          { type: 'domain', start: '11:10', end: '12:00', durationMinutes: 50, window: 'morning', preferred: ['study', 'language', 'coding', 'interview', 'creative', 'music', 'workout'] },
+          { type: 'break', start: '12:00', end: '13:00', durationMinutes: 60, isLunch: true },
+          { type: 'domain', start: '13:00', end: '14:00', durationMinutes: 60, window: 'afternoon', preferred: ['study', 'coding', 'interview', 'language', 'creative', 'music', 'workout'] },
+          { type: 'break', start: '14:00', end: '14:10', durationMinutes: 10, isRelax: true },
+          { type: 'domain', start: '14:10', end: '15:10', durationMinutes: 60, window: 'afternoon', preferred: ['study', 'coding', 'interview', 'language', 'creative', 'music', 'workout'] },
+          { type: 'domain', start: '15:10', end: '16:40', durationMinutes: 90, window: 'afternoon', preferred: ['coding', 'study', 'interview', 'creative', 'language', 'music', 'workout'] },
+          { type: 'break', start: '16:40', end: '16:50', durationMinutes: 10, isRelax: true },
+          { type: 'domain', start: '16:50', end: '17:20', durationMinutes: 30, window: 'evening', preferred: ['music', 'language', 'creative', 'interview', 'study', 'coding', 'workout'] },
+          { type: 'domain', start: '17:20', end: '18:20', durationMinutes: 60, window: 'evening', preferred: ['workout', 'coding', 'study', 'interview', 'language', 'creative', 'music'] },
+          { type: 'domain', start: '18:20', end: '18:50', durationMinutes: 30, window: 'evening', preferred: ['language', 'music', 'creative', 'interview', 'study', 'coding', 'workout'] },
+          { type: 'break', start: '18:50', end: '19:00', durationMinutes: 10, isRelax: true },
+        ];
 
     const fixedGrid = Array.from({ length: 5 }, () => new Array(SLOT_HOURS.length).fill(null));
     const fixedOccupied = Array.from({ length: 5 }, () => new Array(SLOT_HOURS.length).fill(false));
+
+    const taskPrefs = (D.p && D.p.taskPrefs) || {};
+    const domainPriority = {
+      coding: priN(D.c && D.c.priority),
+      workout: priN(D.w && D.w.priority),
+      interview: priN(D.i && D.i.priority),
+      music: priN(D.m && D.m.priority),
+      language: priN(D.l && D.l.priority),
+      creative: priN(D.cr && D.cr.priority),
+      study: priN(D.st && D.st.priority),
+    };
+
+    const prefCache = {};
+    selectedDomains.forEach((domain) => {
+      const p = taskPrefs[domain] || {};
+      prefCache[domain] = {
+        periods: Array.isArray(p.periods) ? p.periods.map((v) => String(v).toLowerCase()) : [],
+        slots: preferredSlotsFromLabels(Array.isArray(p.times) ? p.times : [], Array.isArray(p.periods) ? p.periods : []),
+      };
+    });
+
+    const usage = {};
+    selectedDomains.forEach((domain) => { usage[domain] = 0; });
+
+    function blockScoreForDomain(domain, block) {
+      const windowKey = block.window || 'afternoon';
+      const p = prefCache[domain] || { periods: [], slots: [] };
+      const startSlot = toStartSlotIndex(block.start);
+
+      let score = (domainPriority[domain] || 2) * 4;
+
+      if (Array.isArray(p.periods) && p.periods.length) {
+        score += p.periods.includes(windowKey) ? 3 : -1;
+      }
+
+      if (Array.isArray(p.slots) && p.slots.length) {
+        score += p.slots.includes(startSlot) ? 3 : 0;
+      }
+
+      if (Array.isArray(block.preferred) && block.preferred.length) {
+        const idx = block.preferred.indexOf(domain);
+        if (idx >= 0) score += Math.max(0, 2 - idx * 0.25);
+      }
+
+      score -= (usage[domain] || 0) * 1.2;
+      return score;
+    }
+
+    const resolvedDomainByBlock = {};
+    const unassignedBlocks = [];
+    structuredTemplate.forEach((tpl, idx) => {
+      if (tpl.type !== 'domain') return;
+      if (tpl.domain && selectedDomains.includes(tpl.domain)) {
+        resolvedDomainByBlock[idx] = tpl.domain;
+        usage[tpl.domain] = (usage[tpl.domain] || 0) + 1;
+      } else {
+        unassignedBlocks.push(idx);
+      }
+    });
+
+    // First pass: ensure each selected domain appears at least once when possible.
+    selectedDomains.forEach((domain) => {
+      if (Object.values(resolvedDomainByBlock).includes(domain)) return;
+      if (!unassignedBlocks.length) return;
+      let bestIdxPos = 0;
+      let bestScore = Number.NEGATIVE_INFINITY;
+      for (let i = 0; i < unassignedBlocks.length; i++) {
+        const bi = unassignedBlocks[i];
+        const s = blockScoreForDomain(domain, structuredTemplate[bi]);
+        if (s > bestScore) {
+          bestScore = s;
+          bestIdxPos = i;
+        }
+      }
+      const picked = unassignedBlocks.splice(bestIdxPos, 1)[0];
+      resolvedDomainByBlock[picked] = domain;
+      usage[domain] = (usage[domain] || 0) + 1;
+    });
+
+    // Second pass: fill remaining blocks by highest score.
+    unassignedBlocks.forEach((bi) => {
+      let bestDomain = selectedDomains[0] || 'study';
+      let bestScore = Number.NEGATIVE_INFINITY;
+      selectedDomains.forEach((domain) => {
+        const s = blockScoreForDomain(domain, structuredTemplate[bi]);
+        if (s > bestScore) {
+          bestScore = s;
+          bestDomain = domain;
+        }
+      });
+      resolvedDomainByBlock[bi] = bestDomain;
+      usage[bestDomain] = (usage[bestDomain] || 0) + 1;
+    });
 
     const fixedBlockToCell = (block, dayIndex) => {
       const cell = {
@@ -403,6 +533,36 @@ export function buildSchedule(D) {
         cell.gfgLink = MUSIC_GFG;
       }
 
+      if (block.domain === 'interview') {
+        const focusAreas = (D.i && Array.isArray(D.i.focusAreas) && D.i.focusAreas.length)
+          ? D.i.focusAreas
+          : ['DSA & problem solving'];
+        const focus = focusAreas[dayIndex % focusAreas.length];
+        const bank = INTERVIEW_CONTENT[focus] || [];
+        const pair = bank.length ? bank[(dayIndex + (block.slotSeed || 0)) % bank.length] : null;
+        if (pair) {
+          cell.title = `Interview — ${pair[0]}`;
+          cell.detail = pair[1];
+        } else {
+          cell.title = `Interview — ${focus}`;
+          cell.detail = 'Interview prep: concept review, mock answers, timed practice';
+        }
+      }
+
+      if (block.domain === 'creative') {
+        const med = (D.cr && D.cr.medium) || 'Drawing / Sketching';
+        cell.title = `Creative — ${med}`;
+        cell.detail = 'Creative block: warmup, focused practice, mini project';
+        cell.ytLink = CREATIVE_VID[med] || '';
+        cell.gfgLink = CREATIVE_GFG[med] || '';
+      }
+
+      if (!['coding', 'workout', 'language', 'study', 'music', 'interview', 'creative', 'break'].includes(block.domain)) {
+        const pretty = String(block.domain || 'Task');
+        cell.title = pretty.charAt(0).toUpperCase() + pretty.slice(1);
+        cell.detail = 'Focused practice block';
+      }
+
       if (block.isLunch) {
         const wGoal = mapGoal(D.w && D.w.goal);
         const lData = LUNCH[wGoal] || LUNCH.maintenance;
@@ -448,7 +608,31 @@ export function buildSchedule(D) {
     };
 
     for (let d = 0; d < 5; d++) {
-      fixedBlocks.forEach((block) => fixedPlace(d, block));
+      structuredTemplate.forEach((tpl, blockIndex) => {
+        if (tpl.type === 'domain') {
+          const explicitDomain = tpl.domain;
+          const locked = coreLockedByStart[tpl.start];
+          const domain = (explicitDomain && selectedDomains.includes(explicitDomain))
+            ? explicitDomain
+            : (useCoreLockedPattern && locked && selectedDomains.includes(locked))
+              ? locked
+              : (resolvedDomainByBlock[blockIndex] || selectedDomains[0] || 'study');
+          fixedPlace(d, {
+            ...tpl,
+            domain,
+            title: `${domain.charAt(0).toUpperCase() + domain.slice(1)} — Focus`,
+            detail: 'Focused block',
+            slotSeed: blockIndex,
+          });
+        } else {
+          fixedPlace(d, {
+            ...tpl,
+            domain: 'break',
+            title: tpl.isLunch ? '🍱 Lunch break' : '😌 Relax break',
+            detail: tpl.isLunch ? 'Lunch break' : 'Quick reset: breathe, hydrate, stretch',
+          });
+        }
+      });
     }
 
     const timetable = {};
