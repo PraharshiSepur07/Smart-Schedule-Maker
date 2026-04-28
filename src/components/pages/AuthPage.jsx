@@ -2,6 +2,11 @@ import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { getUsers, saveUsers } from '../../utils/auth';
 
+function createLocalToken() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+  return `tok_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
 export default function AuthPage() {
   const { login, showPage, showToast } = useApp();
   const [tab, setTab] = useState('login');
@@ -33,7 +38,9 @@ export default function AuthPage() {
     if (users.find(u => normalizeEmail(u.email) === email)) return showErr('Email already registered');
     const u = { id: Date.now(), name, email, pass: password };
     saveUsers([...users, u]);
-    login(u); showToast('Welcome, ' + u.name + '! 👋'); showPage('plan');
+    login({ user: u, token: createLocalToken() });
+    showToast('Welcome, ' + u.name + '! 👋');
+    showPage('plan');
   };
 
   const doLogin = () => {
@@ -50,12 +57,15 @@ export default function AuthPage() {
       return emailMatch && passwordMatch;
     });
     if (!u) return showErr('Incorrect email or password');
-    login(u); showToast('Welcome, ' + u.name + '! 👋'); showPage('plan');
+    login({ user: u, token: createLocalToken() });
+    showToast('Welcome, ' + u.name + '! 👋');
+    showPage('plan');
   };
 
   const doGuest = () => {
-    login({ id: 'guest', name: 'Guest', email: 'guest@local' });
-    showToast('Welcome, Guest! 👋'); showPage('plan');
+    login({ user: { id: 'guest', name: 'Guest', email: 'guest@local' }, token: createLocalToken() });
+    showToast('Welcome, Guest! 👋');
+    showPage('plan');
   };
 
   return (

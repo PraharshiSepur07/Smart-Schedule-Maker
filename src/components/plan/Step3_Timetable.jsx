@@ -287,7 +287,8 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
     '   - http://localhost:5174',
     '   - Your deployed domain',
     '5. Add .env:',
-    '   VITE_GOOGLE_CLIENT_ID=your_client_id_here'
+    '   VITE_GOOGLE_CLIENT_ID=your_client_id_here',
+    '   VITE_GOOGLE_API_KEY=your_api_key_here'
   ].join('\n');
 
   const copySetupChecklist = async () => {
@@ -472,7 +473,7 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
           </div>
           <div>2) Enable Google Calendar API for the same project.</div>
           <div>3) Add authorized origins (http://localhost:5173, http://localhost:5174, and deployed URL).</div>
-          <div>4) Set VITE_GOOGLE_CLIENT_ID in your .env file.</div>
+          <div>4) Set VITE_GOOGLE_CLIENT_ID and VITE_GOOGLE_API_KEY in your .env file.</div>
           <div style={{ marginTop: 10 }}>
             <button className="tt-btn" onClick={copySetupChecklist}>Copy Setup Steps</button>
           </div>
@@ -551,9 +552,9 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
                     <td key={day} className={bgCls}>
                       {c.type !== 'break' && <span className={`ctag ${tgCls}`}>{tagLabel(c.type)}</span>}
                       {c.type !== 'break' && Number.isFinite(Number(c.durationMinutes)) && (
-                        <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--text3)', fontWeight: 700 }}>
-                          ⏱ {Math.max(1, Math.round(Number(c.durationMinutes)))} min
-                        </span>
+                      <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--text3)', fontWeight: 700 }}>
+                        ⏱ 60 min
+                      </span>
                       )}
                       {c.type !== 'break' && (
                         <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 700, marginTop: 2 }}>

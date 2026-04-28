@@ -871,137 +871,90 @@ function resetQ(){
 // ══════════════════════════════════════════════════
 function mapGoal(s){s=(s||'').toLowerCase();if(s.includes('gain')||s.includes('muscle'))return 'gain';if(s.includes('loss')||s.includes('burn'))return 'loss';if(s.includes('endur'))return 'endurance';return 'maintenance';}
 function priN(p){return p==='High'?3:p==='Medium'?2:1;}
+function buildSchedule(D) {
 
-function buildSchedule(){
-  var hC=D.domains.includes('coding'),hW=D.domains.includes('workout'),hI=D.domains.includes('interview');
-  var hM=D.domains.includes('music'),hL=D.domains.includes('language'),hCr=D.domains.includes('creative'),hS=D.domains.includes('study');
-  var wGoal=mapGoal(D.w.goal);
-  var wDaysN={'3 days':3,'4 days':4,'5 days':5}[D.w.days]||3;
-  var wSlotPref={'Morning (8–9 AM)':0,'Midday (1–2 PM)':5,'Evening (3–4 PM)':7}[D.p.workoutTime]||7;
-  var wDays=[];for(var i=0;i<5&&wDays.length<wDaysN;i++)wDays.push(i);
-  var cTopics=D.c.topics&&D.c.topics.length?D.c.topics:['Data structures','HTML & CSS','React'];
-  var iTopics=D.i.focusAreas&&D.i.focusAreas.length?D.i.focusAreas:['DSA & problem solving','HR & behavioural'];
-  var wellnessOn=D.p.wellness!=='No';
-  var wellnessFreq=D.p.wellness==='Yes, 3x/week'?3:5;
+  var timetable = {};
 
-  // Build item list with scores
-  var items=[];
-  function add(domain,title,detail,priority,deadline,meta){
-    var p=priN(priority);var urg=0.5;
-    if(deadline){var dl=(new Date(deadline)-new Date())/86400000;urg=Math.max(0,Math.min(1,1-dl/90));}
-    items.push({domain,title,detail,score:p+urg*2,meta:meta||{}});
-  }
+  // Create empty timetable
+  DAYS.forEach(function(day) {
+    timetable[day] = new Array(SLOTS.length).fill(null);
+  });
 
-  if(hC){cTopics.forEach(function(topic){var bank=CODING_CONTENT[topic]||[];bank.forEach(function([t,d],i){add('coding','Coding — '+t,d,D.c.priority,D.c.deadline,{topic,bankIdx:i});});});}
-  if(hI){iTopics.forEach(function(topic){var bank=INTERVIEW_CONTENT[topic]||[];bank.forEach(function([t,d],i){add('interview','Interview — '+t,d,D.i.priority,D.i.deadline,{topic});});});}
-  if(hW){var plan=WORKOUT_PLANS[wGoal]||WORKOUT_PLANS.maintenance;DAYS.forEach(function(_,di){if(!wDays.includes(di))return;var[focus,ex]=plan[di]||['Workout',['Exercise']];add('workout','Workout — '+focus,ex.slice(0,3).join(' · '),D.w.priority,'',{focus,exercises:ex,wGoal,di});});}
-  if(hM){DAYS.forEach(function(_,di){add('music','Music — '+(D.m.instrument||'Practice'),'Focused practice: scales, technique, piece',D.m.priority,'',{di});});}
-  if(hL){DAYS.forEach(function(_,di){add('language','Language — '+(D.l.lang||'Practice'),'Vocab: 20 words · Speaking: 15 min practice · Duolingo streak',D.l.priority,'',{di});});}
-  if(hCr){DAYS.forEach(function(_,di){add('creative','Creative — '+(D.cr.medium||'Art'),'Focused session: warmup sketches → technique → project',D.cr.priority,'',{di});});}
-  if(hS&&D.st.subject){DAYS.forEach(function(_,di){add('study','Study — '+D.st.subject,'Deep study: concepts → examples → practice problems',D.st.priority,D.st.deadline,{di});});}
+  // Create sessions (FIXED duration)
+  function createSessions(name, minutesPerDay, slotsPerDay) {
+    var duration = minutesPerDay / slotsPerDay;
 
-  items.sort((a,b)=>b.score-a.score);
+    // Each slot = 60 minutes
+    var slotsNeeded = Math.round(duration / 60);
+    if (slotsNeeded < 1) slotsNeeded = 1;
 
-  // GUARANTEE AT LEAST 1 SLOT PER DOMAIN (low priority too)
-  var guaranteed={};
-  D.domains.forEach(d=>{guaranteed[d]=false;});
-
-  // Build grid: 5 days × 8 slots
-  var grid=Array.from({length:5},()=>new Array(8).fill(null));
-
-  // Lock lunch slot 4 for all days with meal suggestions
-  var lData=LUNCH[wGoal]||LUNCH.maintenance;
-  for(var d2=0;d2<5;d2++){
-    var meal=lData.meals[d2%lData.meals.length];
-    grid[d2][4]={type:'break',title:'🍱 Lunch break',detail:meal,tag:'break',isLunch:true,lunchNote:lData.note};
-  }
-
-  // Place wellness slots
-  if(wellnessOn){
-    var wDayCount=0;
-    for(var d3=0;d3<5&&wDayCount<wellnessFreq;d3++){
-      var ws=WELLNESS_SLOTS[d3%WELLNESS_SLOTS.length];
-      // Try slot 0 (morning) first
-      if(grid[d3][0]===null){grid[d3][0]={type:'well',title:ws.title,detail:ws.detail,tag:'well',link:ws.link};wDayCount++;}
+    var sessions = [];
+    for (var i = 0; i < slotsPerDay; i++) {
+      sessions.push({
+        task: name,
+        slots: slotsNeeded
+      });
     }
+    return sessions;
   }
 
-  // Place workout at preferred slot
-  if(hW){
-    var plan2=WORKOUT_PLANS[wGoal]||WORKOUT_PLANS.maintenance;
-    wDays.forEach(function(di2){
-      var[focus2,ex2]=plan2[di2]||['Workout',['Exercise']];
-      var sl=wSlotPref;if(sl===4)sl=5;
-      if(grid[di2][sl]===null){
-        grid[di2][sl]={type:'workout',title:'Workout — '+focus2,detail:ex2.slice(0,3).join(' · '),tag:'workout',focus:focus2,exercises:ex2,ytLink:WORKOUT_VID[focus2]||'https://youtube.com/results?search_query=workout+tutorial'};
-        guaranteed['workout']=true;
+  // Place sessions (NO time shifting)
+  function placeSessions(daySlots, sessions) {
+    sessions.forEach(function(session) {
+
+      for (var i = 0; i < daySlots.length; i++) {
+
+        var canFit = true;
+
+        for (var j = 0; j < session.slots; j++) {
+          if (!daySlots[i + j] || daySlots[i + j] !== null) {
+            canFit = false;
+            break;
+          }
+        }
+
+        if (canFit) {
+          for (var j = 0; j < session.slots; j++) {
+            daySlots[i + j] = session.task;
+          }
+          break;
+        }
       }
+
     });
   }
 
-  // Greedy placement from sorted items
-  var seen=new Set();
-  items.forEach(function(item){
-    var key=item.domain+':'+item.title;
-    if(seen.has(key))return;
-    seen.add(key);
-    var placed=false;
-    for(var dd=0;dd<5&&!placed;dd++){
-      for(var ss=0;ss<8&&!placed;ss++){
-        if(grid[dd][ss]===null){
-          var cell={type:item.domain,title:item.title,detail:item.detail,tag:item.domain};
-          // Attach resources
-          if(item.domain==='coding'&&item.meta.topic){
-            var lcs=LEETCODE[item.meta.topic]||[];
-            var gfg=GFG[item.meta.topic];
-            cell.lc=lcs[item.meta.bankIdx%Math.max(lcs.length,1)];
-            cell.gfg=gfg;cell.topic=item.meta.topic;
-          }
-          if(item.domain==='workout'){cell.ytLink=WORKOUT_VID[item.meta.focus]||'';cell.exercises=item.meta.exercises||[];cell.focus=item.meta.focus;}
-          if(item.domain==='music'){var inst=D.m.instrument||'Guitar';cell.ytLink=MUSIC_VID[inst]||'https://youtube.com/results?search_query=music+tutorial';cell.gfgLink=MUSIC_GFG;}
-          if(item.domain==='language'){var lang=D.l.lang||'Spanish';var ll=LANG_LINKS[lang]||defaultLangLink;cell.duoLink=ll.duo;cell.ytLink=ll.yt;}
-          if(item.domain==='creative'){var med=D.cr.medium||'Drawing / Sketching';cell.ytLink=CREATIVE_VID[med]||'';cell.gfgLink=CREATIVE_GFG[med]||'';}
-          if(item.domain==='well')cell.link=item.meta.link;
-          grid[dd][ss]=cell;
-          if(!guaranteed[item.domain])guaranteed[item.domain]=true;
-          placed=true;
-        }
-      }
-    }
+  // Build schedule
+  DAYS.forEach(function(day) {
+
+    var prefs = D.p.taskPrefs;
+    var sessions = [];
+
+    if (prefs.coding)
+      sessions = sessions.concat(createSessions("coding", prefs.coding.minutesPerDay, prefs.coding.slotsPerDay));
+
+    if (prefs.interview)
+      sessions = sessions.concat(createSessions("interview", prefs.interview.minutesPerDay, prefs.interview.slotsPerDay));
+
+    if (prefs.language)
+      sessions = sessions.concat(createSessions("language", prefs.language.minutesPerDay, prefs.language.slotsPerDay));
+
+    if (prefs.workout)
+      sessions = sessions.concat(createSessions("workout", prefs.workout.minutesPerDay, prefs.workout.slotsPerDay));
+
+    if (prefs.study)
+      sessions = sessions.concat(createSessions("study", prefs.study.minutesPerDay, prefs.study.slotsPerDay));
+
+    placeSessions(timetable[day], sessions);
   });
 
-  // Guarantee pass: ensure every selected domain has at least 1 slot
-  D.domains.forEach(function(dom){
-    if(guaranteed[dom])return;
-    for(var dd2=0;dd2<5;dd2++){
-      for(var ss2=0;ss2<8;ss2++){
-        if(grid[dd2][ss2]===null||(grid[dd2][ss2].type==='break'&&ss2!==4)){
-          var fb={type:dom,title:dom.charAt(0).toUpperCase()+dom.slice(1)+' session',detail:'Catch-up session — review notes & practice',tag:dom};
-          grid[dd2][ss2]=fb;guaranteed[dom]=true;
-          return;
-        }
-      }
-    }
-  });
+  return {
+    domains: D.domains,
+    timetable: timetable
+  };
+}
+function buildSchedule(){
 
-  // Fill remaining with cross-domain breaks
-  var fills=[
-    {type:'break',title:'📖 Deep work review',detail:'Summarise today\'s learnings, update notes',tag:'break'},
-    {type:'break',title:'☀️ Morning planning',detail:'Review goals, prioritise today\'s tasks',tag:'break'},
-    {type:'break',title:'🔄 Cross-domain revision',detail:'Quick revision from another domain',tag:'break'},
-    {type:'break',title:'📋 Wrap-up & reflect',detail:'Tick tasks, plan tomorrow, reflect on progress',tag:'break'}
-  ];
-  var fi=0;
-  for(var d4=0;d4<5;d4++)for(var s4=0;s4<8;s4++)if(!grid[d4][s4])grid[d4][s4]=fills[(fi++)%fills.length];
-
-  var timetable={};
-  DAYS.forEach(function(day,di3){timetable[day]=grid[di3].map(function(cell,si){return Object.assign({time:SLOTS[si]},cell);});});
-
-  TS={};DAYS.forEach(day=>TS[day]=new Array(8).fill(false));
-  GS={timetable,domains:D.domains,coding:D.c,workout:D.w,interview:D.i,music:D.m,language:D.l,creative:D.cr,study:D.st,prefs:D.p,userName:D.userName,created:new Date().toISOString()};
-  renderTimetable(timetable);
-  scheduleNotifs(timetable);
-  updateStreak();
 }
 
 // ══════════════════════════════════════════════════
@@ -1040,14 +993,16 @@ function renderTimetable(timetable){
   html+='</tr></thead><tbody>';
 
   SLOTS.forEach(function(sl,si){
-    html+='<tr><td>'+sl+'</td>';
+    var timeText=SLOTS[si];
+    html+='<tr><td>'+timeText+'</td>';
     DAYS.forEach(function(day){
-      var c=timetable[day][si];
-      var[bgCls,tgCls]=tagCls(c.type);
+      var c=timetable[day][si]||{};
+      var cellType=c.type||'break';
+      var[bgCls,tgCls]=tagCls(cellType);
       html+='<td class="'+bgCls+'">';
-      html+='<span class="ctag '+tgCls+'">'+tagLabel(c.type)+'</span>';
-      html+='<div class="ctitle">'+c.title+'</div>';
-      html+='<div class="cdet">'+c.detail+'</div>';
+      html+='<span class="ctag '+tgCls+'">'+tagLabel(cellType)+'</span>';
+      html+='<div class="ctitle">'+(c.title||'')+'</div>';
+      html+='<div class="cdet">'+(c.type ? c.type.toUpperCase() + ' • 60 min' : '')+'</div>';
       html+='<div class="res-links">';
       if(c.lc)html+='<a class="res-link rl-lc" href="'+c.lc.u+'" target="_blank">🔗 LeetCode</a>';
       if(c.gfg)html+='<a class="res-link rl-gfg" href="'+c.gfg.u+'" target="_blank">📗 GFG</a>';
@@ -1152,12 +1107,12 @@ function exportGCal(){
   var ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//SmartSchedule Pro//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH'];
   var dayOffsets={Monday:0,Tuesday:1,Wednesday:2,Thursday:3,Friday:4};
   Object.entries(GS.timetable).forEach(function([day,slots]){
-    slots.forEach(function(cell){
-      if(cell.type==='break')return;
+    slots.forEach(function(cell,si){
+      if(!cell||cell.type==='break')return;
       var d=new Date(monday);d.setDate(d.getDate()+dayOffsets[day]);
-      var h=parseInt(cell.time.split(':')[0]);
-      var start=new Date(d);start.setHours(h,0,0);
-      var end=new Date(start);end.setHours(h+1,0,0);
+      var slotHour=SLOT_HOURS[si]||8;
+      var start=new Date(d);start.setHours(slotHour,0,0);
+      var end=new Date(start);end.setHours(slotHour+1,0,0);
       function fmt(dt){return dt.toISOString().replace(/[-:]/g,'').slice(0,15)+'Z';}
       ics.push('BEGIN:VEVENT','DTSTART:'+fmt(start),'DTEND:'+fmt(end),'SUMMARY:'+cell.title,'DESCRIPTION:'+cell.detail+(cell.lc?'\\nLeetCode: '+cell.lc.u:'')+(cell.ytLink?'\\nTutorial: '+cell.ytLink:'')+(cell.duoLink?'\\nDuolingo: '+cell.duoLink:''),'END:VEVENT');
     });

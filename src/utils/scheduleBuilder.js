@@ -66,6 +66,27 @@ const PERIOD_WINDOWS = {
   night: [[22, 24], [0, 6]],
 };
 
+const ALIGNMENT_MINUTES = 30;
+const ALIGNMENT_STEP = Math.max(1, Math.round(ALIGNMENT_MINUTES / SLOT_MINUTES));
+
+function isAlignedSlotIndex(slotIndex) {
+  return Number.isInteger(slotIndex) && slotIndex % ALIGNMENT_STEP === 0;
+}
+
+function alignSlotIndex(slotIndex) {
+  if (!Number.isFinite(Number(slotIndex))) return 0;
+  const normalized = Math.max(0, Math.round(Number(slotIndex)));
+  const lower = Math.floor(normalized / ALIGNMENT_STEP) * ALIGNMENT_STEP;
+  const upper = lower + ALIGNMENT_STEP;
+  const lowerDist = Math.abs(normalized - lower);
+  const upperDist = Math.abs(upper - normalized);
+  return upperDist < lowerDist ? upper : lower;
+}
+
+function alignedSlotIndexes() {
+  return Array.from({ length: SLOT_HOURS.length }, (_, i) => i).filter(isAlignedSlotIndex);
+}
+
 function slotsForPeriod(period) {
   const windows = PERIOD_WINDOWS[String(period || '').toLowerCase()] || [];
   const slots = new Set();
@@ -77,41 +98,19 @@ function slotsForPeriod(period) {
       if (inRange) slots.add(idx);
     });
   });
-  return Array.from(slots).sort((a, b) => a - b);
+  return Array.from(slots).sort((a, b) => a - b).filter(isAlignedSlotIndex);
 }
 
-function buildSessionDurations(minutesPerDay) {
+function buildSessionDurations(minutesPerDay, slotsPerDay) {
   const total = Math.max(30, Math.round(Number(minutesPerDay) || 60));
-  if (total <= 60) return [total];
-
-  const durations = [];
-  let remaining = total;
-  while (remaining > 0) {
-    if (remaining <= 60) {
-      if (remaining < 30 && durations.length) {
-        durations[durations.length - 1] += remaining;
-      } else {
-        durations.push(Math.max(30, remaining));
-      }
-      break;
-    }
-
-    const afterSixty = remaining - 60;
-    if (afterSixty > 0 && afterSixty < 30) {
-      durations.push(remaining);
-      break;
-    }
-
-    durations.push(60);
-    remaining -= 60;
-  }
-
-  return durations;
+  const slotCount = Math.max(1, Math.round(Number(slotsPerDay) || 1));
+  const fixedDuration = Math.max(30, Math.round(total / slotCount));
+  return Array.from({ length: slotCount }, () => fixedDuration);
 }
 
 function preferredSlotsFromLabels(labels, periods = []) {
   if ((!Array.isArray(labels) || !labels.length) && (!Array.isArray(periods) || !periods.length)) {
-    return Array.from({ length: SLOT_HOURS.length }, (_, i) => i);
+    return alignedSlotIndexes();
   }
   const allSlots = new Set();
   (labels || []).forEach((label) => {
@@ -147,7 +146,7 @@ function preferredSlotsFromLabels(labels, periods = []) {
           bestIdx = idx;
         }
       });
-      allSlots.add(bestIdx);
+      allSlots.add(alignSlotIndex(bestIdx));
     }
   });
         // If explicit periods are provided, collect period buckets. When multiple
@@ -175,19 +174,20 @@ function preferredSlotsFromLabels(labels, periods = []) {
             }
             // Also include any slots discovered from explicit labels but not in
             // period buckets (e.g., exact times). Append them after interleaved.
-            Array.from(allSlots).sort((a,b)=>a-b).forEach(s => { if (!added.has(s)) interleaved.push(s); });
+            Array.from(allSlots).sort((a,b)=>a-b).forEach(s => { if (!added.has(s) && isAlignedSlotIndex(s)) interleaved.push(s); });
             return interleaved;
           }
           // Single period selected — return sorted unique list for that period
-          return Array.from(periodBuckets[0]).sort((a, b) => a - b);
+            return Array.from(periodBuckets[0]).sort((a, b) => a - b).filter(isAlignedSlotIndex);
         }
 
-        return allSlots.size ? Array.from(allSlots).sort((a, b) => a - b) : Array.from({ length: SLOT_HOURS.length }, (_, i) => i);
+          return allSlots.size ? Array.from(allSlots).sort((a, b) => a - b).filter(isAlignedSlotIndex) : alignedSlotIndexes();
 }
 
 function preferredPeriodBuckets(periods = []) {
   return (periods || [])
     .map((period) => slotsForPeriod(period))
+    .map((bucket) => bucket.filter(isAlignedSlotIndex))
     .filter((bucket) => bucket.length);
 }
 
@@ -195,12 +195,40 @@ function isFullSlotCoverage(slots, slotCount) {
   return Array.isArray(slots) && slots.length >= slotCount;
 }
 
-function sessionDurationForDomain(domain, itemMeta, domainPlan) {
-  const fromMeta = Number(itemMeta && itemMeta.durationMinutes);
-  if (Number.isFinite(fromMeta) && fromMeta > 0) return Math.max(30, Math.round(fromMeta));
+function sessionDurationForDomain(domain, domainPlan) {
   const fromPlan = Number(domainPlan && domainPlan[domain] && domainPlan[domain].minutesPerSession);
   if (Number.isFinite(fromPlan) && fromPlan > 0) return Math.max(30, Math.round(fromPlan));
   return 60;
+}
+
+function expectedSessionDurationForDomain(domain, domainPlan) {
+  return sessionDurationForDomain(domain, domainPlan);
+}
+
+function validateFixedSessionDurations(timetable, domainPlan) {
+  const mismatches = [];
+  DAYS.forEach((day) => {
+    (timetable[day] || []).forEach((cell, slotIndex) => {
+      if (!cell || cell.type === 'break' || cell.isContinuation) return;
+      const expected = expectedSessionDurationForDomain(cell.type, domainPlan);
+      const actual = Number(cell.durationMinutes);
+      if (!isAlignedSlotIndex(slotIndex) || !Number.isFinite(actual) || actual !== expected) {
+        mismatches.push({
+          day,
+          slotIndex,
+          domain: cell.type,
+          expected,
+          actual,
+          title: cell.title || ''
+        });
+      }
+    });
+  });
+
+  if (mismatches.length) {
+    console.warn('Invalid session duration(s) detected in generated schedule', mismatches);
+    throw new Error('Generated schedule contains sessions with unexpected duration');
+  }
 }
 
 function slotsNeededForDuration(durationMinutes) {
@@ -319,7 +347,7 @@ export function buildSchedule(D) {
   const hCr = D.domains.includes('creative');
   const hS = D.domains.includes('study');
 
-  const useStructuredDailyLayout = Array.isArray(D.domains) && D.domains.length > 0;
+  const useStructuredDailyLayout = Boolean(D.p && D.p.useStructuredDailyLayout);
 
   if (useStructuredDailyLayout) {
     const selectedDomains = Array.from(new Set(D.domains));
@@ -688,20 +716,16 @@ export function buildSchedule(D) {
         : 60;
     
     const minutesPerDay = parseMinutesPerDay(taskPrefMinutes, fallbackMinutes);
-    const sessionDurations = buildSessionDurations(minutesPerDay);
-
-    let slotsPerDay = sessionDurations.length;
-    if (explicitSlots !== undefined && explicitSlots !== null && Number.isFinite(Number(explicitSlots))) {
-      slotsPerDay = Math.max(1, Math.min(SLOT_HOURS.length, Number(explicitSlots)));
-    } else if (taskPrefMinutes !== undefined && taskPrefMinutes !== null) {
-      slotsPerDay = sessionDurations.length;
-    }
+    const slotsPerDay = explicitSlots !== undefined && explicitSlots !== null && Number.isFinite(Number(explicitSlots))
+      ? Math.max(1, Math.min(SLOT_HOURS.length, Number(explicitSlots)))
+      : Math.max(1, parseSlotsPerDay(taskPref.slotsPerDay || taskPref.slots || taskPref.times?.length || 1, 1));
+    const sessionDurations = buildSessionDurations(minutesPerDay, slotsPerDay);
 
     domainPlan[dom] = {
       minutesPerDay,
       slotsPerDay,
       sessionDurations,
-      minutesPerSession: Math.max(30, Math.round(minutesPerDay / Math.max(1, slotsPerDay)))
+      minutesPerSession: sessionDurations[0] || Math.max(30, Math.round(minutesPerDay / Math.max(1, slotsPerDay)))
     };
     maxPerDay[dom] = slotsPerDay;
   });
@@ -794,7 +818,7 @@ export function buildSchedule(D) {
   D.domains.forEach(d => { guaranteed[d] = false; });
 
   const slotCount = SLOT_HOURS.length;
-  const allSlotIndexes = Array.from({ length: slotCount }, (_, i) => i);
+  const allSlotIndexes = alignedSlotIndexes();
   const grid = Array.from({ length: 5 }, () => new Array(slotCount).fill(null));
   const blocked = Array.from({ length: 5 }, () => new Array(slotCount).fill(false));
   const occupied = Array.from({ length: 5 }, () => new Array(slotCount).fill(false));
@@ -835,6 +859,7 @@ export function buildSchedule(D) {
 
   function canPlace(domain, dayIdx, slotIdx, durationMinutes = 60) {
     const needed = slotsNeededForDuration(durationMinutes);
+    if (!isAlignedSlotIndex(slotIdx)) return false;
     if (slotIdx < 0 || slotIdx + needed > slotCount) return false;
     for (let k = 0; k < needed; k++) {
       if (blocked[dayIdx][slotIdx + k] || occupied[dayIdx][slotIdx + k]) return false;
@@ -930,7 +955,7 @@ export function buildSchedule(D) {
       title: item.title,
       detail: item.detail,
       tag: item.domain,
-      durationMinutes: sessionDurationForDomain(item.domain, item.meta, domainPlan)
+      durationMinutes: sessionDurationForDomain(item.domain, domainPlan)
     };
     if (item.domain === 'coding' && item.meta.topic) {
       const lcs = LEETCODE[item.meta.topic] || [];
@@ -1023,7 +1048,7 @@ export function buildSchedule(D) {
       const prefSlots = workoutPrefSlots.length ? workoutPrefSlots : [defaultWorkoutSlot];
       const workoutDurations = (domainPlan.workout && Array.isArray(domainPlan.workout.sessionDurations) && domainPlan.workout.sessionDurations.length)
         ? domainPlan.workout.sessionDurations
-        : [sessionDurationForDomain('workout', {}, domainPlan)];
+        : [sessionDurationForDomain('workout', domainPlan)];
       const workoutSlotsForDay = Math.max(1, workoutDurations.length || maxPerDay.workout || 1);
 
       for (let copy = 0; copy < workoutSlotsForDay; copy++) {
@@ -1111,7 +1136,7 @@ export function buildSchedule(D) {
         if (Number.isInteger(item.meta.di) && dd !== item.meta.di) continue;
         for (let pi = 0; pi < passes[pass].length; pi++) {
           const ss = passes[pass][pi];
-          const duration = sessionDurationForDomain(item.domain, item.meta, domainPlan);
+          const duration = sessionDurationForDomain(item.domain, domainPlan);
           if (grid[dd][ss] !== null || !canPlace(item.domain, dd, ss, duration)) continue;
           const score = placementPenalty(item, dd, ss);
           if (!best || score < best.score) best = { dd, ss, score };
@@ -1133,7 +1158,7 @@ export function buildSchedule(D) {
     if (guaranteed[dom]) return;
     for (let dd2 = 0; dd2 < 5; dd2++) {
       for (let ss2 = 0; ss2 < slotCount; ss2++) {
-        const fallbackDuration = sessionDurationForDomain(dom, {}, domainPlan);
+        const fallbackDuration = sessionDurationForDomain(dom, domainPlan);
         if ((grid[dd2][ss2] === null || (grid[dd2][ss2].type === 'break' && ss2 !== lunchSlot)) && canPlace(dom, dd2, ss2, fallbackDuration)) {
           grid[dd2][ss2] = {
             type: dom,
@@ -1280,6 +1305,8 @@ export function buildSchedule(D) {
   DAYS.forEach((day, di3) => {
     timetable[day] = grid[di3].map((cell, si) => (cell ? ({ time: SLOTS[si], ...cell }) : null));
   });
+
+  validateFixedSessionDurations(timetable, domainPlan);
 
   const totalWeeks = getScheduleWeekCount(D.p && D.p.scheduleDeadline);
   const weeks = Array.from({ length: totalWeeks }, (_, wi) => {

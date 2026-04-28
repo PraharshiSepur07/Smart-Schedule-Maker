@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { getCurrentUser, persistUser, clearUser } from '../utils/auth';
+import { getAuthSession, persistAuthSession, clearUser } from '../utils/auth';
 
 const AppContext = createContext(null);
 
@@ -13,14 +13,28 @@ export function AppProvider({ children }) {
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
   // Auth
-  const [currentUser, setCurrentUser] = useState(() => getCurrentUser());
-  const login = useCallback((user) => {
-    persistUser(user);
-    setCurrentUser(user);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authToken, setAuthToken] = useState('');
+
+  useEffect(() => {
+    const session = getAuthSession();
+    if (!session) return;
+    setCurrentUser(session.user || null);
+    setAuthToken(session.token || '');
+  }, []);
+
+  const login = useCallback((userOrSession, token = '') => {
+    const session = userOrSession && userOrSession.user
+      ? userOrSession
+      : { user: userOrSession, token };
+    persistAuthSession(session);
+    setCurrentUser(session.user || null);
+    setAuthToken(String(session.token || ''));
   }, []);
   const logout = useCallback(() => {
     clearUser();
     setCurrentUser(null);
+    setAuthToken('');
   }, []);
 
   // Page routing
@@ -74,7 +88,7 @@ export function AppProvider({ children }) {
   return (
     <AppContext.Provider value={{
       theme, toggleTheme,
-      currentUser, login, logout,
+      currentUser, authToken, login, logout,
       activePage, showPage,
       globalSchedule, setGlobalSchedule,
       tickState, setTickState,

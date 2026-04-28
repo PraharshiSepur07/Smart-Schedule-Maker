@@ -1,13 +1,20 @@
 const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
-const GOOGLE_GSI_SRC = 'https://accounts.google.com/gsi/client';
+const GOOGLE_API_SRC = 'https://apis.google.com/js/api.js';
+const GOOGLE_DISCOVERY_DOCS = ['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'];
+const GOOGLE_TIME_ZONE = 'Asia/Kolkata';
 const LAST_SYNC_HASH_KEY = 'ssp_google_last_sync_hash_v1';
 const BATCH_DELAY_MS = 180;
 
-let gsiLoadPromise = null;
+let gapiLoadPromise = null;
+let gapiInitPromise = null;
 const sessionSyncedEventKeys = new Set();
 
 function getClientId() {
   return import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+}
+
+function getApiKey() {
+  return import.meta.env.VITE_GOOGLE_API_KEY || getClientId() || '';
 }
 
 function isLikelyValidClientId(clientId) {
@@ -80,34 +87,64 @@ export function getGoogleSyncSetupState() {
   return { configured: true, reason: '', message: '' };
 }
 
-function loadGoogleIdentityScript() {
-  if (window.google?.accounts?.oauth2) return Promise.resolve();
-  if (gsiLoadPromise) return gsiLoadPromise;
+function loadGoogleApiScript() {
+  if (window.gapi?.client && window.gapi?.auth2) return Promise.resolve();
+  if (gapiLoadPromise) return gapiLoadPromise;
 
-  gsiLoadPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[src="${GOOGLE_GSI_SRC}"]`);
+  gapiLoadPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${GOOGLE_API_SRC}"]`);
     if (existing) {
       existing.addEventListener('load', () => resolve(), { once: true });
-      existing.addEventListener('error', () => reject(new Error('Failed to load Google Identity script')),
-        { once: true });
-      if (window.google?.accounts?.oauth2) resolve();
+      existing.addEventListener('error', () => reject(new Error('Failed to load Google API script')), { once: true });
+      if (window.gapi) resolve();
       return;
     }
 
     const script = document.createElement('script');
-    script.src = GOOGLE_GSI_SRC;
+    script.src = GOOGLE_API_SRC;
     script.async = true;
     script.defer = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load Google Identity script'));
+    script.onerror = () => reject(new Error('Failed to load Google API script'));
     document.head.appendChild(script);
   });
 
-  return gsiLoadPromise;
+  return gapiLoadPromise;
 }
 
 export async function warmupGoogleIdentity() {
-  await loadGoogleIdentityScript();
+  await ensureGoogleClientReady();
+}
+
+async function ensureGoogleClientReady() {
+  if (gapiInitPromise) return gapiInitPromise;
+
+  gapiInitPromise = (async () => {
+    await loadGoogleApiScript();
+    const apiKey = getApiKey();
+    const clientId = getClientId();
+    if (!apiKey || !clientId) {
+      throw toSyncError('not-configured', 'Google Calendar Sync is not configured. Missing API key or client ID.');
+    }
+
+    await new Promise((resolve, reject) => {
+      window.gapi.load('client:auth2', async () => {
+        try {
+          await window.gapi.client.init({
+            apiKey,
+            clientId,
+            discoveryDocs: GOOGLE_DISCOVERY_DOCS,
+            scope: GOOGLE_SCOPE,
+          });
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
+  })();
+
+  return gapiInitPromise;
 }
 
 function parseSlotStart(slotLabel) {
@@ -170,48 +207,35 @@ function buildWeekEventEntries(schedule) {
 }
 
 async function getAccessToken(clientId, loginHint) {
-  await loadGoogleIdentityScript();
+  await ensureGoogleClientReady();
   const normalizedHint = String(loginHint || '').trim();
 
-  return new Promise((resolve, reject) => {
-    const tokenClient = window.google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: GOOGLE_SCOPE,
-      login_hint: normalizedHint || undefined,
-      callback: (response) => {
-        if (response?.error) {
-          if (response.error === 'access_denied') {
-            reject(toSyncError('permission-denied', 'Permission denied by user', response));
-            return;
-          }
-          reject(toSyncError('token-failed', 'Failed to fetch Google access token', response));
-          return;
-        }
-        if (response?.access_token) {
-          resolve(response.access_token);
-          return;
-        }
-        reject(toSyncError('token-failed', 'Google sign-in did not return an access token', response));
-      },
-      error_callback: (err) => {
-        const type = String(err?.type || err?.error || '').toLowerCase();
-        if (type.includes('popup_closed')) {
-          reject(toSyncError('login-cancelled', 'Login cancelled', err));
-          return;
-        }
-        if (type.includes('popup_failed_to_open') || type.includes('popup_blocked')) {
-          reject(toSyncError('popup-blocked', 'Google sign-in popup was blocked by the browser', err));
-          return;
-        }
-        reject(toSyncError('oauth-failed', err?.error_description || 'Google OAuth failed', err));
-      },
-    });
+  const auth = window.gapi.auth2.getAuthInstance();
+  if (!auth) {
+    throw toSyncError('oauth-failed', 'Google auth client is not available');
+  }
 
-    tokenClient.requestAccessToken({
+  try {
+    const user = await auth.signIn({
       prompt: normalizedHint ? 'consent' : 'select_account consent',
       login_hint: normalizedHint || undefined,
     });
-  });
+    const response = user?.getAuthResponse ? user.getAuthResponse(true) : null;
+    const accessToken = response?.access_token;
+    if (!accessToken) {
+      throw toSyncError('token-failed', 'Google sign-in did not return an access token', response);
+    }
+    return accessToken;
+  } catch (err) {
+    const message = String(err?.error || err?.details || err?.message || '').toLowerCase();
+    if (message.includes('popup_closed') || message.includes('popup_closed_by_user')) {
+      throw toSyncError('login-cancelled', 'Login cancelled', err);
+    }
+    if (message.includes('popup_blocked')) {
+      throw toSyncError('popup-blocked', 'Google sign-in popup was blocked by the browser', err);
+    }
+    throw toSyncError('oauth-failed', err?.message || 'Google OAuth failed', err);
+  }
 }
 
 function fmtDateTime(dt) {
@@ -242,15 +266,12 @@ export async function createCalendarEvent(accessToken, event, timeZone) {
     `EventKey: ${event.eventKey}`
   ].join('\n');
 
-  let response;
   try {
-    response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    await ensureGoogleClientReady();
+    return await window.gapi.client.calendar.events.insert({
+      calendarId: 'primary',
+      sendUpdates: 'all',
+      resource: {
         summary: event.summary,
         description: [event.description || '', generatedMeta].filter(Boolean).join('\n\n'),
         colorId: EVENT_COLORS[event.type] || undefined,
@@ -268,18 +289,14 @@ export async function createCalendarEvent(accessToken, event, timeZone) {
           dateTime: fmtDateTime(event.end),
           timeZone,
         },
-      }),
+      },
     });
   } catch (err) {
-    throw toSyncError('network-failed', 'Network error while syncing Google Calendar events', err);
+    if (err?.result?.error?.message) {
+      throw toSyncError('api-failed', err.result.error.message, err.result.error);
+    }
+    throw toSyncError('network-failed', err?.message || 'Network error while syncing Google Calendar events', err);
   }
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw toSyncError('api-failed', text || 'Failed to create Google Calendar event', text);
-  }
-
-  return response.json();
 }
 
 function chunkArray(arr, chunkSize) {
@@ -361,7 +378,7 @@ export async function syncScheduleToGoogleCalendar({ schedule, accountHint = '',
     throw toSyncError('oauth-failed', err?.message || 'Google OAuth failed', err);
   }
 
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const timeZone = GOOGLE_TIME_ZONE;
 
   onStatus?.(`Syncing ${freshEntries.length} events...`);
   const { synced, failed } = await syncAllEvents({
