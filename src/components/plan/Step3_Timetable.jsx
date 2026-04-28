@@ -74,7 +74,8 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
     return `${h}:${m}`;
   };
 
-  const getCellTimeRange = (slotLabel, durationMinutes) => {
+  const getCellTimeRange = (slotLabel, durationMinutes, cell = null) => {
+    if (cell && cell.displayTimeRange) return cell.displayTimeRange;
     const startMins = parseSlotStartMinutes(slotLabel);
     const dur = Number(durationMinutes);
     if (startMins === null || !Number.isFinite(dur) || dur <= 0) return slotLabel;
@@ -84,6 +85,7 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
   const getRowTimeLabel = (slotLabel, slotIndex) => {
     const rowCells = DAYS.map((day) => activeTimetable?.[day]?.[slotIndex]).filter(Boolean);
     const representative = rowCells.find((c) => !isContinuationCell(c));
+    if (representative && representative.displayTimeRange) return representative.displayTimeRange;
     const duration = representative && Number.isFinite(Number(representative.durationMinutes)) && Number(representative.durationMinutes) > 0
       ? Number(representative.durationMinutes)
       : SLOT_MINUTES;
@@ -98,6 +100,31 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
   const isContinuationCell = (cell) => {
     if (!cell) return false;
     return cell.type === 'break' && Boolean(cell.isContinuation);
+  };
+
+  const getContinuationDisplayCell = (day, slotIndex, cell) => {
+    if (!cell || !isContinuationCell(cell)) return cell;
+    const daySlots = activeTimetable?.[day] || [];
+
+    // Backtrack to the start cell this continuation belongs to.
+    for (let i = slotIndex - 1; i >= 0; i--) {
+      const prev = daySlots[i];
+      if (!prev || isContinuationCell(prev)) continue;
+      if (cell.continuationOf && prev.title && prev.title !== cell.continuationOf) continue;
+      return {
+        ...prev,
+        durationMinutes: SLOT_MINUTES,
+      };
+    }
+
+    // Fallback: keep it as a break block but avoid "Session continues" wording.
+    return {
+      type: 'break',
+      title: cell.isRelax ? '😌 Relax break' : (cell.continuationOf || 'Break'),
+      detail: cell.detail || '',
+      tag: 'break',
+      durationMinutes: SLOT_MINUTES,
+    };
   };
 
   const getWeekMarker = () => {
@@ -512,12 +539,14 @@ export default function Step3_Timetable({ timetable, tickState, setTickState, us
               <tr key={sl}>
                 <td>{rowTimeLabel}</td>
                 {DAYS.map(day => {
-                  const c = activeTimetable[day][si];
-                  if (!c) return <td key={day} className="c-break" />;
-                  if (isContinuationCell(c)) return null;
+                  const rawCell = activeTimetable[day][si];
+                  if (!rawCell) return <td key={day} className="c-break" />;
+                  // Revert: do not render continuation cells as separate cards — hide them like before
+                  if (isContinuationCell(rawCell)) return <td key={day} className="c-break" />;
+                  const c = rawCell;
                   const [bgCls, tgCls] = tagCls(c.type);
                   const ticked = (tickState[day] || [])[si];
-                  const cellTimeRange = getCellTimeRange(sl, c.durationMinutes);
+                  const cellTimeRange = getCellTimeRange(sl, c.durationMinutes, c);
                   return (
                     <td key={day} className={bgCls}>
                       {c.type !== 'break' && <span className={`ctag ${tgCls}`}>{tagLabel(c.type)}</span>}

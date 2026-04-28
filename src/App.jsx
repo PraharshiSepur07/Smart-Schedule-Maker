@@ -1,4 +1,5 @@
 import { AppProvider, useApp } from './context/AppContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import Nav from './components/Nav';
 import Toast from './components/Toast';
 import LoadingOverlay from './components/LoadingOverlay';
@@ -38,7 +39,9 @@ function AppInner() {
 export default function App() {
   return (
     <AppProvider>
-      <AppInner />
+      <ErrorBoundary>
+        <AppInner />
+      </ErrorBoundary>
     </AppProvider>
   );
 }

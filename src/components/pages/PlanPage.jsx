@@ -22,6 +22,7 @@ export default function PlanPage() {
   const { showToast, showLoad, hideLoad, setGlobalSchedule, globalSchedule, tickState, setTickState, addNotif, currentUser } = useApp();
 
   const [step, setStep] = useState(0);
+  const [planNotice, setPlanNotice] = useState('');
 
   // Form state
   const [domains, setDomains] = useState([]);
@@ -87,13 +88,20 @@ export default function PlanPage() {
   // Rehydrate from a saved schedule (called by HistoryPage)
   // Expose a way to load saved data via prop
   const handleNext0 = () => {
-    if (!domains.length) { showToast('Select at least one domain'); return; }
+    if (!domains.length) {
+      const msg = 'Select at least one domain before generating a schedule.';
+      setPlanNotice(msg);
+      showToast(msg);
+      return;
+    }
+    setPlanNotice('');
     goTo(1);
   };
 
   const handleNext1 = () => goTo(2);
 
   const handleNext2 = async () => {
+    setPlanNotice('');
     showLoad('Building your schedule...');
     await new Promise((resolve) => requestAnimationFrame(resolve));
 
@@ -122,7 +130,9 @@ export default function PlanPage() {
       goTo(3);
     } catch (err) {
       console.error('Schedule build failed:', err);
-      showToast(err?.message || 'Failed to build schedule');
+      const msg = err?.message || 'Failed to build schedule';
+      setPlanNotice(msg);
+      showToast(msg);
     } finally {
       hideLoad();
     }
@@ -142,6 +152,12 @@ export default function PlanPage() {
         </div>
         <div className="pbar"><div className="pfill" style={{ width: STEP_PCT[step] }} /></div>
       </div>
+
+      {planNotice && (
+        <div className="info-box info-amber" style={{ marginBottom: '0.9rem' }}>
+          {planNotice}
+        </div>
+      )}
 
       {step === 0 && (
         <Step0_Domains domains={domains} setDomains={setDomains} onNext={handleNext0} />

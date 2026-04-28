@@ -4,7 +4,7 @@ import {
   WELLNESS_SLOTS, CODING_CONTENT, INTERVIEW_CONTENT,
   MUSIC_VID, MUSIC_GFG, LANG_LINKS, defaultLangLink,
   CREATIVE_VID, CREATIVE_GFG
-} from '../data/constants';
+} from '../data/constants.js';
 
 function mapGoal(s) {
   s = (s || '').toLowerCase();
@@ -150,18 +150,49 @@ function preferredSlotsFromLabels(labels, periods = []) {
       allSlots.add(bestIdx);
     }
   });
-  (periods || []).forEach((period) => {
-    const windows = PERIOD_WINDOWS[String(period || '').toLowerCase()] || [];
-    windows.forEach(([startHour, endHour]) => {
-      SLOT_HOURS.forEach((slotHour, idx) => {
-        const inRange = startHour < endHour
-          ? slotHour >= startHour && slotHour < endHour
-          : slotHour >= startHour || slotHour < endHour;
-        if (inRange) allSlots.add(idx);
-      });
-    });
-  });
-  return allSlots.size ? Array.from(allSlots).sort((a, b) => a - b) : Array.from({ length: SLOT_HOURS.length }, (_, i) => i);
+        // If explicit periods are provided, collect period buckets. When multiple
+        // periods are selected (e.g., morning + evening) we interleave slots from
+        // each period so placement spreads across them instead of filling earlier
+        // slots only.
+        const periodBuckets = (periods || []).map((period) => slotsForPeriod(period));
+        if (periodBuckets.length) {
+          // Add period bucket slots to set to avoid duplicates from label parsing
+          periodBuckets.forEach((b) => b.forEach((s) => allSlots.add(s)));
+          if (periodBuckets.length > 1) {
+            const interleaved = [];
+            const queues = periodBuckets.map(b => Array.from(b));
+            let added = new Set();
+            let more = true;
+            while (more) {
+              more = false;
+              for (let q = 0; q < queues.length; q++) {
+                if (queues[q].length) {
+                  more = true;
+                  const slot = queues[q].shift();
+                  if (!added.has(slot)) { added.add(slot); interleaved.push(slot); }
+                }
+              }
+            }
+            // Also include any slots discovered from explicit labels but not in
+            // period buckets (e.g., exact times). Append them after interleaved.
+            Array.from(allSlots).sort((a,b)=>a-b).forEach(s => { if (!added.has(s)) interleaved.push(s); });
+            return interleaved;
+          }
+          // Single period selected — return sorted unique list for that period
+          return Array.from(periodBuckets[0]).sort((a, b) => a - b);
+        }
+
+        return allSlots.size ? Array.from(allSlots).sort((a, b) => a - b) : Array.from({ length: SLOT_HOURS.length }, (_, i) => i);
+}
+
+function preferredPeriodBuckets(periods = []) {
+  return (periods || [])
+    .map((period) => slotsForPeriod(period))
+    .filter((bucket) => bucket.length);
+}
+
+function isFullSlotCoverage(slots, slotCount) {
+  return Array.isArray(slots) && slots.length >= slotCount;
 }
 
 function sessionDurationForDomain(domain, itemMeta, domainPlan) {
@@ -288,11 +319,178 @@ export function buildSchedule(D) {
   const hCr = D.domains.includes('creative');
   const hS = D.domains.includes('study');
 
+  const fixedRequiredDomains = ['workout', 'coding', 'language', 'study', 'music'];
+  const useFixedDailyLayout = fixedRequiredDomains.every((domain) => D.domains.includes(domain));
+
+  if (useFixedDailyLayout) {
+    const fixedBlocks = [
+      { start: '08:00', end: '09:00', domain: 'workout', title: 'Workout — Daily routine', detail: 'Full-body training block', durationMinutes: 60 },
+      { start: '09:00', end: '10:30', domain: 'coding', title: 'Coding — Practice', detail: 'Focused coding block', durationMinutes: 90 },
+      { start: '10:30', end: '10:40', domain: 'break', title: '😌 Relax break', detail: 'Quick reset: breathe, hydrate, stretch', durationMinutes: 10, isRelax: true },
+      { start: '10:40', end: '12:00', domain: 'language', title: `Language — ${(D.l && D.l.lang) || 'Practice'}`, detail: 'Language practice block', durationMinutes: 80 },
+      { start: '12:00', end: '13:00', domain: 'break', title: '🍱 Lunch break', detail: 'Lunch break', durationMinutes: 60, isLunch: true },
+      { start: '13:00', end: '14:00', domain: 'study', title: `Study — ${(D.st && D.st.subject) || 'Study'}`, detail: 'Deep study block', durationMinutes: 60 },
+      { start: '14:00', end: '14:10', domain: 'break', title: '😌 Relax break', detail: 'Quick reset: breathe, hydrate, stretch', durationMinutes: 10, isRelax: true },
+      { start: '14:10', end: '15:10', domain: 'study', title: `Study — ${(D.st && D.st.subject) || 'Study'}`, detail: 'Deep study block', durationMinutes: 60 },
+      { start: '15:10', end: '16:40', domain: 'coding', title: 'Coding — Practice', detail: 'Focused coding block', durationMinutes: 90 },
+      { start: '16:40', end: '16:50', domain: 'break', title: '😌 Relax break', detail: 'Quick reset: breathe, hydrate, stretch', durationMinutes: 10, isRelax: true },
+      { start: '16:50', end: '17:20', domain: 'music', title: `Music — ${(D.m && D.m.instrument) || 'Practice'}`, detail: 'Music practice block', durationMinutes: 30 },
+      { start: '17:20', end: '18:20', domain: 'workout', title: 'Workout — Evening routine', detail: 'Second workout block', durationMinutes: 60 },
+      { start: '18:20', end: '23:00', domain: 'language', title: `Language — ${(D.l && D.l.lang) || 'Practice'}`, detail: 'Language practice for the rest of the day', durationMinutes: 280 },
+    ];
+
+    const fixedGrid = Array.from({ length: 5 }, () => new Array(SLOT_HOURS.length).fill(null));
+    const fixedOccupied = Array.from({ length: 5 }, () => new Array(SLOT_HOURS.length).fill(false));
+
+    const fixedBlockToCell = (block, dayIndex) => {
+      const cell = {
+        type: block.domain,
+        title: block.title,
+        detail: block.detail,
+        tag: block.domain,
+        durationMinutes: block.durationMinutes,
+        displayTimeRange: `${block.start}-${block.end}`,
+      };
+
+      if (block.domain === 'coding') {
+        const topic = (D.c && Array.isArray(D.c.topics) && D.c.topics.length) ? D.c.topics[dayIndex % D.c.topics.length] : 'Practice';
+        const bank = CODING_CONTENT[topic] || [];
+        const pair = bank.length ? bank[dayIndex % bank.length] : null;
+        if (pair) {
+          cell.title = `Coding — ${pair[0]}`;
+          cell.detail = pair[1];
+          const lcs = LEETCODE[topic] || [];
+          if (lcs.length) cell.lc = lcs[dayIndex % lcs.length];
+          cell.gfg = GFG[topic];
+          cell.topic = topic;
+        }
+      }
+
+      if (block.domain === 'workout') {
+        const goal = mapGoal(D.w && D.w.goal);
+        const plan = WORKOUT_PLANS[goal] || WORKOUT_PLANS.maintenance;
+        const [focus, ex] = plan[dayIndex % 5] || ['Workout', ['Exercise']];
+        cell.title = `Workout — ${focus}`;
+        cell.detail = ex.slice(0, 3).join(' · ');
+        cell.focus = focus;
+        cell.exercises = ex;
+        cell.ytLink = WORKOUT_VID[focus] || 'https://youtube.com/results?search_query=workout+tutorial';
+      }
+
+      if (block.domain === 'language') {
+        const lang = (D.l && D.l.lang) || 'Practice';
+        const ll = LANG_LINKS[lang] || defaultLangLink;
+        cell.title = `Language — ${lang}`;
+        cell.detail = 'Language block: speaking, vocab, practice';
+        cell.duoLink = ll.duo;
+        cell.ytLink = ll.yt;
+      }
+
+      if (block.domain === 'study') {
+        const subject = (D.st && D.st.subject) || 'Study';
+        cell.title = `Study — ${subject}`;
+        cell.detail = 'Deep study: concepts → examples → practice problems';
+        cell.link = buildStudyGuideLink(subject);
+        cell.ytLink = buildStudyYouTubeLink(subject);
+        cell.gfgLink = buildStudyGfgLink(subject);
+      }
+
+      if (block.domain === 'music') {
+        const inst = (D.m && D.m.instrument) || 'Practice';
+        cell.title = `Music — ${inst}`;
+        cell.detail = 'Music practice: technique, drills, repertoire';
+        cell.ytLink = MUSIC_VID[inst] || 'https://www.youtube.com/results?search_query=music+tutorial';
+        cell.gfgLink = MUSIC_GFG;
+      }
+
+      if (block.isLunch) {
+        const wGoal = mapGoal(D.w && D.w.goal);
+        const lData = LUNCH[wGoal] || LUNCH.maintenance;
+        cell.title = '🍱 Lunch break';
+        cell.detail = lData.meals[dayIndex % lData.meals.length];
+        cell.isLunch = true;
+        cell.lunchNote = lData.note;
+      }
+
+      if (block.isRelax) {
+        cell.title = '😌 Relax break';
+        cell.detail = 'Quick reset: breathe, hydrate, stretch';
+        cell.isRelax = true;
+      }
+
+      return cell;
+    };
+
+    const fixedPlace = (dayIndex, block) => {
+      const startSlot = toStartSlotIndex(block.start);
+      const needed = slotsNeededForDuration(block.durationMinutes);
+      if (startSlot < 0 || startSlot >= SLOT_HOURS.length) return;
+      if (startSlot + needed > SLOT_HOURS.length) return;
+
+      const cell = fixedBlockToCell(block, dayIndex);
+      fixedGrid[dayIndex][startSlot] = cell;
+      fixedOccupied[dayIndex][startSlot] = true;
+      for (let k = 1; k < needed; k++) {
+        const si = startSlot + k;
+        fixedOccupied[dayIndex][si] = true;
+        fixedGrid[dayIndex][si] = {
+          type: 'break',
+          title: '',
+          detail: cell.detail,
+          tag: 'break',
+          isContinuation: true,
+          continuationOf: cell.title,
+          isLunch: Boolean(cell.isLunch),
+          isRelax: Boolean(cell.isRelax),
+          displayTimeRange: cell.displayTimeRange,
+        };
+      }
+    };
+
+    for (let d = 0; d < 5; d++) {
+      fixedBlocks.forEach((block) => fixedPlace(d, block));
+    }
+
+    const timetable = {};
+    DAYS.forEach((day, di) => {
+      timetable[day] = fixedGrid[di].map((cell, si) => (cell ? ({ time: SLOTS[si], ...cell }) : null));
+    });
+
+    const totalWeeks = getScheduleWeekCount(D.p && D.p.scheduleDeadline);
+    const weeks = Array.from({ length: totalWeeks }, (_, wi) => {
+      const wk = buildWeekDates(wi);
+      return {
+        weekIndex: wi,
+        startDate: wk.startDate,
+        dates: wk.dates,
+        timetable: wi === 0 ? timetable : cloneWeekWithShift(timetable, wi),
+        label: `Week ${wi + 1}`
+      };
+    });
+
+    return {
+      timetable,
+      weeks,
+      domains: D.domains,
+      coding: D.c,
+      workout: D.w,
+      interview: D.i,
+      music: D.m,
+      language: D.l,
+      creative: D.cr,
+      study: D.st,
+      prefs: D.p,
+      userName: D.userName,
+      created: new Date().toISOString()
+    };
+  }
+
   const wGoal = mapGoal(D.w.goal);
   const wDaysN = { '3 days': 3, '4 days': 4, '5 days': 5 }[D.w.days] || 3;
   const taskPrefs = D.p.taskPrefs || {};
-  const workoutPrefSlots = preferredSlotsFromLabels((taskPrefs.workout && taskPrefs.workout.times) || [], (taskPrefs.workout && taskPrefs.workout.periods) || []);
+  const workoutPrefSlots = preferredSlotsFromLabels((taskPrefs.workout && taskPrefs.workout.times) || [], []);
   const workoutPrefPeriods = Array.isArray(taskPrefs.workout && taskPrefs.workout.periods) ? taskPrefs.workout.periods : [];
+  const workoutPeriodBuckets = preferredPeriodBuckets(workoutPrefPeriods);
   const domainPlan = {};
   const maxPerDay = {};
   D.domains.forEach((dom) => {
@@ -417,6 +615,7 @@ export function buildSchedule(D) {
   const blocked = Array.from({ length: 5 }, () => new Array(slotCount).fill(false));
   const occupied = Array.from({ length: 5 }, () => new Array(slotCount).fill(false));
   const placedCount = Array.from({ length: 5 }, () => ({}));
+  const domainPlacedCount = {};
 
   (D.p.unavailableRanges || []).forEach((r) => {
     if (!r || !r.from || !r.to) return;
@@ -638,9 +837,6 @@ export function buildSchedule(D) {
       const [focus2, ex2] = plan2[di2] || ['Workout', ['Exercise']];
       const defaultWorkoutSlot = Math.max(0, SLOT_HOURS.indexOf(18));
       const prefSlots = workoutPrefSlots.length ? workoutPrefSlots : [defaultWorkoutSlot];
-      const periodBuckets = workoutPrefPeriods.length
-        ? workoutPrefPeriods.map((period) => slotsForPeriod(period)).filter((bucket) => bucket.length)
-        : [];
       const workoutDurations = (domainPlan.workout && Array.isArray(domainPlan.workout.sessionDurations) && domainPlan.workout.sessionDurations.length)
         ? domainPlan.workout.sessionDurations
         : [sessionDurationForDomain('workout', {}, domainPlan)];
@@ -649,9 +845,18 @@ export function buildSchedule(D) {
       for (let copy = 0; copy < workoutSlotsForDay; copy++) {
         const workoutDuration = Math.max(30, Number(workoutDurations[copy] || workoutDurations[0] || 60));
         let placed = false;
-        const candidateBuckets = periodBuckets.length
-          ? [periodBuckets[copy % periodBuckets.length], prefSlots]
-          : [prefSlots];
+        const candidateBuckets = [];
+        if (workoutPeriodBuckets.length) {
+          const preferredBucketIdx = (copy + di2) % workoutPeriodBuckets.length;
+          candidateBuckets.push(workoutPeriodBuckets[preferredBucketIdx]);
+          workoutPeriodBuckets.forEach((bucket, idx) => {
+            if (idx !== preferredBucketIdx) candidateBuckets.push(bucket);
+          });
+        }
+        if (workoutPrefSlots.length && !isFullSlotCoverage(workoutPrefSlots, slotCount)) {
+          candidateBuckets.push(workoutPrefSlots);
+        }
+        if (!candidateBuckets.length) candidateBuckets.push(prefSlots);
 
         for (let bi = 0; bi < candidateBuckets.length && !placed; bi++) {
           const candidateSlots = candidateBuckets[bi];
@@ -703,9 +908,19 @@ export function buildSchedule(D) {
   // Greedy placement
   items.forEach(item => {
     const taskPref = taskPrefs[item.domain] || {};
-    const prefSlots = preferredSlotsFromLabels(taskPref.times || [], taskPref.periods || []);
+    const prefSlots = preferredSlotsFromLabels(taskPref.times || [], []);
+    const periodBuckets = preferredPeriodBuckets(taskPref.periods || []);
     const hasExplicitPref = (Array.isArray(taskPref.times) && taskPref.times.length > 0) || (Array.isArray(taskPref.periods) && taskPref.periods.length > 0);
-    const passes = hasExplicitPref ? [prefSlots] : [prefSlots, allSlotIndexes];
+    const passes = [];
+    if (periodBuckets.length) {
+      const bucketIdx = (domainPlacedCount[item.domain] || 0) % periodBuckets.length;
+      passes.push(periodBuckets[bucketIdx]);
+      periodBuckets.forEach((bucket, idx) => {
+        if (idx !== bucketIdx) passes.push(bucket);
+      });
+    }
+    if (prefSlots.length && !isFullSlotCoverage(prefSlots, slotCount)) passes.push(prefSlots);
+    if (!passes.length || !hasExplicitPref) passes.push(allSlotIndexes);
     for (let pass = 0; pass < passes.length; pass++) {
       let best = null;
       for (let dd = 0; dd < 5; dd++) {
@@ -722,6 +937,7 @@ export function buildSchedule(D) {
         const cell = buildCellFromItem(item);
         grid[best.dd][best.ss] = cell;
         markPlaced(item.domain, best.dd, best.ss, cell.durationMinutes, cell.title);
+        domainPlacedCount[item.domain] = (domainPlacedCount[item.domain] || 0) + 1;
         if (!guaranteed[item.domain]) guaranteed[item.domain] = true;
         break;
       }
@@ -748,6 +964,133 @@ export function buildSchedule(D) {
       }
     }
   });
+
+  // Post-process: fill small gaps (1-2 slots) with a relax break so
+  // short empty windows (like 10 min) are not left visually blank.
+  function fillSmallGaps() {
+    // Allow slightly larger small gaps (up to ~20 minutes) and be more permissive
+    // when deciding to insert a relax break. This fills short null runs that are
+    // adjacent to sessions or simple empty break placeholders.
+    const maxGapSlots = Math.max(1, Math.ceil(20 / SLOT_MINUTES)); // ~18-24 mins depending on SLOT_MINUTES
+    for (let d = 0; d < 5; d++) {
+      let s = 0;
+      while (s < slotCount) {
+        const isFillable = (cell) => cell === null || (cell && cell.type === 'break' && (!cell.title || cell.title === '') && !cell.isLunch && !cell.isContinuation && !cell.isRelax);
+        if (!isFillable(grid[d][s])) { s++; continue; }
+        let e = s;
+        while (e < slotCount && isFillable(grid[d][e])) e++;
+        const len = e - s;
+        if (len > 0 && len <= maxGapSlots && len < slotCount) {
+          const prev = s > 0 ? grid[d][s - 1] : null;
+          const next = e < slotCount ? grid[d][e] : null;
+          // Fill if at least one adjacent cell is a real session (not a break),
+          // or if adjacent cells are empty break placeholders (title === '').
+          const adjSession = (prev && prev.type && prev.type !== 'break') || (next && next.type && next.type !== 'break');
+          const adjEmptyBreak = (prev && prev.type === 'break' && (!prev.title || prev.title === '')) || (next && next.type === 'break' && (!next.title || next.title === ''));
+          if (adjSession || adjEmptyBreak) {
+            for (let k = 0; k < len; k++) {
+              const si = s + k;
+              // don't overwrite blocked/occupied cells
+              if (blocked[d][si] || occupied[d][si]) continue;
+              occupied[d][si] = true;
+              if (k === 0) {
+                // Replace null or empty-break with a labeled relax break
+                grid[d][si] = {
+                  type: 'break',
+                  title: '😌 Relax break',
+                  detail: 'Quick reset: breathe, hydrate, stretch',
+                  tag: 'break',
+                  durationMinutes: Math.max(6, Math.round(len * SLOT_MINUTES)),
+                  isRelax: true
+                };
+              } else {
+                // Continuation slot for the relax break
+                grid[d][si] = {
+                  type: 'break',
+                  title: '',
+                  detail: 'Relax break in progress',
+                  tag: 'break',
+                  isContinuation: true,
+                  isRelax: true,
+                  durationMinutes: Math.max(6, Math.round(len * SLOT_MINUTES))
+                };
+              }
+            }
+          }
+        }
+        s = e;
+      }
+    }
+  }
+
+  // fillSmallGaps();
+  // Disabled: reverting to previous behavior (do not auto-fill small gaps into relax breaks)
+
+  // Normalize short-break slots across the week: if a given slot index has
+  // break/relax placeholders on multiple days, convert continuation slots on
+  // other days at the same index into relax breaks so the row looks consistent.
+  if (false) {
+  (function normalizeSharedBreakRows() {
+    for (let s = 0; s < slotCount; s++) {
+      let breakCount = 0;
+      for (let d = 0; d < 5; d++) {
+        const cell = grid[d][s];
+        if (!cell) continue;
+        if (cell.type === 'break' && (cell.isRelax || !cell.title || cell.title === '')) breakCount++;
+      }
+      // If at least two days have a break at this slot, prefer making other
+      // continuation slots into relax breaks so the row appears uniformly broken.
+      if (breakCount >= 2) {
+        for (let d = 0; d < 5; d++) {
+          const cell = grid[d][s];
+          if (!cell) continue;
+          if (cell.type === 'break' && cell.isContinuation) {
+            if (blocked[d][s] || occupied[d][s]) continue;
+              occupied[d][s] = true;
+            grid[d][s] = {
+              type: 'break',
+              title: '😌 Relax break',
+              detail: cell.detail || 'Quick reset: breathe, hydrate, stretch',
+              tag: 'break',
+              durationMinutes: SLOT_MINUTES,
+              isRelax: true
+            };
+          }
+        }
+      }
+    }
+  })();
+  }
+
+  // Aggressive pass: if a continuation slot is adjacent to a break in the
+  // same day (before or after), convert it to a relax break. This makes
+  // short mixed rows appear fully broken (e.g., 10:30–10:40 becomes break).
+  if (false) {
+  (function aggressiveNeighborConvert() {
+    for (let d = 0; d < 5; d++) {
+      for (let s = 0; s < slotCount; s++) {
+        const cell = grid[d][s];
+        if (!cell || !cell.isContinuation) continue;
+        const prev = s > 0 ? grid[d][s - 1] : null;
+        const next = s < slotCount - 1 ? grid[d][s + 1] : null;
+        const prevIsBreak = prev && prev.type === 'break';
+        const nextIsBreak = next && next.type === 'break';
+        if (prevIsBreak || nextIsBreak) {
+          if (blocked[d][s] || occupied[d][s]) continue;
+          occupied[d][s] = true;
+          grid[d][s] = {
+            type: 'break',
+            title: '😌 Relax break',
+            detail: cell.detail || 'Quick reset: breathe, hydrate, stretch',
+            tag: 'break',
+            durationMinutes: SLOT_MINUTES,
+            isRelax: true
+          };
+        }
+      }
+    }
+  })();
+  }
 
   const timetable = {};
   DAYS.forEach((day, di3) => {
